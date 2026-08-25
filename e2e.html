@@ -12,7 +12,7 @@ const W=()=>f.contentWindow,D=()=>f.contentDocument;
 const nav=async h=>{W().location.hash=h;await wait(340);};
 const q=s=>D().querySelector(s),qa=s=>[...D().querySelectorAll(s)];
 const txt=()=>D().body.innerText;
-const store=()=>JSON.parse(W().localStorage.getItem('bincotan.store.v2')||'{"bookings":[]}');
+const store=()=>JSON.parse(W().localStorage.getItem('bincotan.store.v3')||'{"bookings":[]}');
 // render() replaces #app, so any cached node is detached after a click.
 // Always re-query immediately before clicking.
 const selectN=async(key,count)=>{

@@ -694,6 +694,29 @@ let lastPath = null;
 function pathOf(){ return (location.hash || '#/').replace(/^#\/?/, '').split('?')[0]; }
 
 function render(){
+  try { paint(); }
+  catch (err) { crash(err); }
+}
+
+/* A prototype gets clicked at from odd angles. If a screen throws, say so and
+   offer a way out — never leave a blank page with no explanation. */
+function crash(err){
+  console.error(err);
+  $('#app').innerHTML = `<section class="sec"><div class="wrap narrow" style="text-align:center">
+    <div class="eyebrow">Something broke</div>
+    <h1 class="display" style="margin:14px 0">This screen didn’t load.</h1>
+    <p class="lede" style="margin:0 auto 12px">Usually stale data left over from an
+    earlier version of the prototype.</p>
+    <p class="hint" style="margin-bottom:26px"><code>${esc(err && err.message || String(err))}</code></p>
+    <button class="btn btn-primary btn-lg" id="crashReset">Reset the data and reload</button>
+  </div></section>`;
+  $('#crashReset')?.addEventListener('click', () => {
+    try { localStorage.removeItem('bincotan.store.v3'); } catch {}
+    location.hash = '#/'; location.reload();
+  });
+}
+
+function paint(){
   let path = pathOf();
 
   if (path === 'reset'){ resetStore(); draft = { date:null, time:'19:00', pax:SETTINGS.minPax,
@@ -716,8 +739,8 @@ function render(){
   lastPath = path;
 
   $('#app').innerHTML = demoBar(path) + html;
-  wire(path);
-  observe();
+  try { wire(path); observe(); }
+  catch (err) { return crash(err); }
   /* Explicitly instant: html{scroll-behavior:smooth} would otherwise animate a
      route change, and animate the restore after a selection. */
   window.scrollTo({ top: samePage ? y : 0, behavior: 'instant' });

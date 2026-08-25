@@ -131,11 +131,30 @@ function seedStore(){
   };
 }
 
-const STORE_KEY = 'bincotan.store.v2';
+/* Bump this whenever the record shape changes. Anything saved under an older key
+   is simply ignored, so a returning visitor never loads data this code can't read. */
+const STORE_KEY = 'bincotan.store.v3';
+
+/* Belt and braces: even within a version, refuse a record that's missing a field
+   the app depends on. A half-written or hand-edited store re-seeds instead of
+   throwing mid-render and leaving a blank page. */
+function isUsableStore(raw){
+  return !!raw
+    && Array.isArray(raw.bookings)
+    && Array.isArray(raw.blocked)
+    && Array.isArray(raw.releasedMonths)
+    && typeof raw.seq === 'number'
+    && raw.bookings.every(b =>
+         b && typeof b.id === 'string' && typeof b.date === 'string'
+         && Array.isArray(b.chicken) && Array.isArray(b.veg)
+         && b.addons && typeof b.addons === 'object'
+         && Array.isArray(b.payments));
+}
+
 let STORE = (() => {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-    if (raw && Array.isArray(raw.bookings)) return raw;
+    if (isUsableStore(raw)) return raw;
   } catch {}                       // private mode, or a sandboxed embed with storage blocked
   return seedStore();
 })();

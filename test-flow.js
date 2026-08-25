@@ -90,7 +90,17 @@ t('and the evening opens up again', isBookable(day), true);
 const before = JSON.stringify(bookings());
 saveStore();
 t('store round-trips through localStorage',
-  JSON.stringify(JSON.parse(localStorage.getItem('bincotan.store.v2')).bookings), before);
+  JSON.stringify(JSON.parse(localStorage.getItem(STORE_KEY)).bookings), before);
+
+// ── a store from an older shape must be refused, not loaded ──
+t('rejects a pre-refactor record', isUsableStore({ seq:1, blocked:[], bookings:[
+  { id:'X', date:'2026-01-01', status:'menu', chicken:[], veg:[], addons:{} }] }), false);
+t('rejects a booking with no payment records', isUsableStore({ seq:1, blocked:[], releasedMonths:[],
+  bookings:[{ id:'X', date:'2026-01-01', chicken:[], veg:[], addons:{} }] }), false);
+t('rejects a missing releasedMonths', isUsableStore({ seq:1, blocked:[], bookings:[] }), false);
+t('accepts what seedStore produces', isUsableStore(seedStore()), true);
+t('accepts an empty but well-formed store',
+  isUsableStore({ seq:0, blocked:[], releasedMonths:[], bookings:[] }), true);
 
 // ── invariants ──
 resetStore();
