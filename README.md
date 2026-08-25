@@ -4,7 +4,15 @@ Booking and menu-ordering site for a private yakitori chef in Singapore.
 This is the **design prototype** — real screens, real menu data, real pricing logic,
 no backend yet.
 
-Live draft: https://claude.ai/code/artifact/79ac52ef-f678-4aaa-8c75-15be499d2095
+**Live:** https://githubchun.github.io/bincotan-yakitori/
+
+Send Gino that link — it works on any phone, no login. Deep links work too:
+`…/#/menu`, `…/#/reserve`, `…/#/chef`.
+
+The site carries `noindex` and a `robots.txt` disallow while it's a draft, so it
+won't turn up in search results for his business.
+
+To take it down: `gh repo delete githubchun/bincotan-yakitori`
 
 ## Run it
 
