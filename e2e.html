@@ -11,8 +11,9 @@ const f=document.createElement('iframe');f.src='index.html#/reset';document.body
 const W=()=>f.contentWindow,D=()=>f.contentDocument;
 const nav=async h=>{W().location.hash=h;await wait(340);};
 const q=s=>D().querySelector(s),qa=s=>[...D().querySelectorAll(s)];
+const eva=e=>W().eval(e);
 const txt=()=>D().body.innerText;
-const store=()=>JSON.parse(W().localStorage.getItem('bincotan.store.v3')||'{"bookings":[]}');
+const store=()=>JSON.parse(W().localStorage.getItem('bincotan.store.v4')||'{"bookings":[]}');
 // render() replaces #app, so any cached node is detached after a click.
 // Always re-query immediately before clicking.
 const selectN=async(key,count)=>{
@@ -125,6 +126,63 @@ f.onload=async()=>{try{
   mb.click(); await wait(320);
   log(store().releasedMonths.length!==m0,'toggling changes which months are open');
   log(!D().querySelector('a[href="#/chef/calendar"]'),'the separate calendar tab is gone');
+
+  // ── 6. the menu manager ──
+  await nav('#/chef/menu');
+  log(qa('[data-add]').length===5,'every category offers an add control');
+
+  qa('[data-add=vegetable]')[0].click(); await wait(300);
+  const af=q('[data-addcat=vegetable]');
+  log(!!af,'the add form opens inline');
+  log(af.dataset.mode==='set','a vegetable defaults to being part of the set');
+  af.en.value='Okra'; af.cn.value='秋葵';
+  af.dispatchEvent(new Event('submit',{cancelable:true,bubbles:true})); await wait(350);
+  log(!!eva("byId('okra')"),'the item exists after adding');
+  log(store().menu.custom.some(c=>c.id==='okra'),'and it is written to storage, not just memory');
+  log(eva("imgOf(byId('okra'))").startsWith('data:image/svg'),'with the drawn placeholder for a photo');
+
+  await nav('#/menu');
+  log(txt().includes('Okra'),'customers see it on the public menu');
+
+  // it must still be there for a browser that loads the page fresh
+  const f2=document.createElement('iframe'); f2.src='index.html#/chef/menu';
+  await new Promise(r=>{f2.onload=r;document.body.appendChild(f2);}); await wait(700);
+  log(!!f2.contentWindow.eval("byId('okra')"),'a fresh load still has it — the edit really persisted');
+  f2.remove();
+
+  // a price edit, which used to vanish on reload
+  await nav('#/chef/menu');
+  const pin=qa('[data-price=wagyu]')[0];
+  pin.value='28'; pin.dispatchEvent(new Event('change',{bubbles:true})); await wait(320);
+  log(store().menu.edits.wagyu.price===28,'a price change is persisted');
+  log(store().log.at(-1).kind==='price.changed','and written to the transaction record');
+
+  // removing something nobody ordered
+  qa('[data-rm=okra]')[0].click(); await wait(280);
+  log(/will be deleted/.test(txt()),'an unused item warns that it will be deleted');
+  qa('[data-rmyes=okra]')[0].click(); await wait(320);
+  log(!eva("byId('okra')"),'and it goes');
+  log(/Undo/.test(txt()),'with an undo offered');
+  qa('[data-undo]')[0].click(); await wait(320);
+  log(!!eva("byId('okra')"),'undo brings it back');
+
+  // removing something a booking depends on
+  const daniel=store().bookings.find(b=>b.addons['king-prawn']);
+  const wasTotal=W().quote(daniel).subtotal;
+  qa('[data-rm=king-prawn]')[0].click(); await wait(280);
+  log(/already list this/.test(txt()),'an item in use names the bookings that have it');
+  qa('[data-rmyes=king-prawn]')[0].click(); await wait(340);
+  log(!eva("inCatAll('premium')").some(m=>m.id==='king-prawn'),'it leaves Gino\'s list');
+  log(!!eva("byId('king-prawn')"),'but it is still resolvable');
+  log(W().quote(store().bookings.find(b=>b.id===daniel.id)).subtotal===wasTotal,
+      'and the total on the booking that ordered it does NOT move');
+  log(/retired/.test(txt()),'the retired group appears');
+  qa('[data-restore=king-prawn]')[0]?.click(); await wait(320);
+  log(eva("inCatAll('premium')").some(m=>m.id==='king-prawn'),'and it can be put back');
+
+  await nav('#/chef/records');
+  log(/Item added/.test(txt()),'the record shows the menu changes');
+  log(eva('chainState()').ok,'and the chain still verifies');
 
   o.insertAdjacentHTML('beforeend',`<div class="l ${fails?'bad':'ok'}" style="font-size:16px;padding:12px">
     ${fails?fails+' FAILED of '+n:'ALL '+n+' PASSED'}</div>`);

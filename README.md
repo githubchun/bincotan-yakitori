@@ -49,7 +49,7 @@ Hash-based, so it works on static hosting.
 | `#/order` | Explains the private link; lists bookings as a shortcut |
 | `#/chef` | Gino: calendar and bookings |
 | `#/chef/records` | Gino: the transaction record |
-| `#/chef/menu` | Gino: price and availability per item |
+| `#/chef/menu` | Gino: add, remove, reprice and hide items |
 | `#/chef/settings` | Gino: the numbers behind every quote |
 | `#/reset` | Wipe everything back to the sample data |
 
@@ -88,6 +88,27 @@ screen, then closes individual evenings inside it. Anything in an unreleased
 month simply isn't offered.
 
 If bookings dry up, check whether he's released the next month.
+
+---
+
+## The menu
+
+`#/chef/menu` is where Gino runs it. He can change a price, switch an item off
+when it isn't in season, add one of his own, or take one away. Every change is
+saved and appears in the transaction record; customers see it immediately.
+
+Removing splits two ways, and it isn't a choice he makes:
+
+- **Nothing has ordered it** — it is deleted, with an undo.
+- **A booking has ordered it** — it is *retired*: off both menus, but still
+  priced on the bills that already include it. Restorable from a footer at the
+  bottom of its category.
+
+That rule exists because bookings store item ids, so deleting an item outright
+would quietly make a confirmed, part-paid order cheaper.
+
+Items he adds have no photograph — they show a drawn placeholder until there's
+a backend to upload real ones to. See `docs/HANDOFF.md`.
 
 ---
 
@@ -171,7 +192,7 @@ appends to the record. Nothing writes around that.
 ./run-tests.sh
 ```
 
-**183 assertions** across four suites — `run-tests.sh` prints the total, so
+**234 assertions** across four suites — `run-tests.sh` prints the total, so
 that's the number to trust if this one has drifted:
 
 | Suite | Covers |
@@ -190,7 +211,7 @@ Serve the site, then open each. Every one prints its own pass/fail.
 
 | Harness | What it proves |
 |---|---|
-| `e2e.html` | 28 steps: book → build → submit → pay → confirm → reopen |
+| `e2e.html` | 50 steps: book → build → submit → pay → confirm → reopen, then Gino editing the menu |
 | `tamper.html` | The dashboard catches an edited or deleted record |
 | `stale.html` | Recovery from an out-of-date or corrupt saved store |
 | `probe-widths.html` | No route scrolls sideways at 360 / 390 / 768px |

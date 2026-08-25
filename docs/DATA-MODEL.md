@@ -4,7 +4,7 @@ Every shape the app persists, the rules that must hold about them, and how the
 booking lifecycle works. This is the document to translate into Postgres tables
 when the backend gets built.
 
-Everything lives in one `localStorage` record under `bincotan.store.v3`.
+Everything lives in one `localStorage` record under `bincotan.store.v4`.
 
 ---
 
@@ -17,7 +17,8 @@ Everything lives in one `localStorage` record under `bincotan.store.v3`.
   releasedMonths: ['2026-08', '2026-09'],   // months open for booking
   blocked: ['2026-09-08', '2026-09-09'],    // evenings closed inside a released month
   bookings: [ /* Booking */ ],
-  log: [ /* Entry */ ]            // append-only, see below
+  log: [ /* Entry */ ],           // append-only, see below
+  menu: { /* MenuChanges */ }     // what Gino has done to the menu, see below
 }
 ```
 
@@ -223,8 +224,57 @@ Static data in `menu-data.js`, 54 items across five categories
 }
 ```
 
-`inCat()` filters out `active: false` for customers; `inCatAll()` returns
-everything, for the chef's menu manager.
+Three lookups, three jobs:
+
+| | Returns |
+|---|---|
+| `inCat(cat)` | what customers pick from — active and not retired |
+| `inCatAll(cat)` | what Gino manages — everything not retired |
+| `retiredIn(cat)` | just the retired ones, for the footer he can restore from |
+| `byId(id)` | **everything, retired included** |
+
+That last row is load-bearing. A booking stores item *ids*, and `quote()` skips
+an id it cannot resolve — so if `byId` ever stopped returning a retired item,
+every bill that ordered it would silently get cheaper. See *Menu changes*.
+
+---
+
+## Menu changes
+
+`MENU` in `menu-data.js` is the menu Gino was shipped and is never edited.
+Everything he changes afterwards lives in `STORE.menu` and is re-projected onto
+that array by `applyMenu()` on load:
+
+```js
+{
+  edits:   { wagyu: { price: 28 }, comb: { active: false } },  // overrides on shipped items
+  custom:  [ /* Menu items he added — same shape, plus noImg: true */ ],
+  retired: ['king-prawn'],   // off both menus, still resolvable by byId
+  deleted: ['squid']         // shipped items removed outright; gone from byId too
+}
+```
+
+`applyMenu()` is idempotent: it rebuilds `MENU` from scratch each time, so
+calling it twice is the same as calling it once.
+
+### Removing splits two ways, and it isn't a choice
+
+`removeMenuItem(id)` asks `itemInUse(id)` which bookings reference the item:
+
+| Referenced by | What happens | Reversible with |
+|---|---|---|
+| nothing | **deleted** — off `byId`, into `deleted` or out of `custom` | `undoRemove(snapshot)` |
+| any booking | **retired** — off both menus, still on `byId` | `restoreItem(id)` |
+
+The rule exists because a hard delete would reprice a confirmed order. It is
+asserted in `test-flow.js` (*"SO THE AGREED TOTAL IS UNCHANGED"*) rather than
+left implied.
+
+### New items have no photo
+
+The 54 shipped items each have a cutout at `assets/img/{id}.webp`. Anything Gino
+adds carries `noImg: true` and falls back to a drawn SVG skewer. `imgOf()` reads
+`m.photo` first — that field is unused today and is the seam for real uploads.
 
 Images live at `assets/img/{id}.webp` — 58 transparent cutouts extracted from
 Gino's PDF, resolved through `asset()` so the bundler can rewrite one function

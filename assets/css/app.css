@@ -503,6 +503,54 @@ button.ccell{cursor:pointer}
 .tog.on{background:var(--ember-dim);border-color:var(--ember)}
 .tog.on i{left:21px;background:var(--ember-2)}
 
+/* menu manager — adding, removing, retiring */
+.btn-sm{padding:8px 15px;font-size:.78rem}
+.mrow-x{flex:0 0 26px;width:26px;height:26px;border-radius:50%;font-size:1.15rem;line-height:1;
+  color:var(--text-3);border:1px solid transparent;transition:.15s}
+.mrow-x:hover{color:#E0736A;border-color:var(--red);background:rgba(196,69,59,.1)}
+
+.mconfirm{border-left:2px solid var(--red);background:rgba(196,69,59,.07);
+  border-radius:0 var(--r) var(--r) 0;padding:12px 14px;margin:0 0 8px 54px}
+.mconfirm p{font-size:.8rem;color:var(--text-2);line-height:1.5;margin-bottom:10px}
+.mconfirm-a{display:flex;gap:8px;flex-wrap:wrap}
+.mconfirm-a .btn:first-child{border:1px solid var(--red);color:#E0736A}
+.mconfirm-a .btn:first-child:hover{background:rgba(196,69,59,.16)}
+
+.mundo{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);
+  padding:11px 15px;margin-bottom:20px;font-size:.83rem;color:var(--text-2)}
+
+.madd-o{display:block;width:100%;margin-top:10px;padding:11px;border-radius:var(--r);
+  border:1px dashed var(--line);color:var(--text-3);font-size:.8rem;transition:.15s}
+.madd-o:hover{border-color:var(--ember);color:var(--ember-2);border-style:solid}
+
+.madd{margin-top:12px;padding:16px;border-radius:var(--r);
+  background:var(--surface-2);border:1px solid var(--line)}
+.madd-g{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.madd-f{display:flex;flex-direction:column;gap:5px;flex:1 1 150px;
+  font-size:.72rem;color:var(--text-3);letter-spacing:.04em;text-transform:uppercase}
+.madd-f input,.madd-f select{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  padding:9px 10px;font-size:.86rem;color:var(--text);font-family:inherit;text-transform:none;letter-spacing:0}
+.madd-f input:focus,.madd-f select:focus{outline:none;border-color:var(--ember)}
+/* The price, unit and minimum only mean anything when there IS a price. */
+.madd:not([data-mode="fixed"]) .madd-p{display:none}
+.madd-rec{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--text-2);cursor:pointer}
+.madd-rec input{accent-color:var(--ember)}
+.madd-err{margin-top:10px;font-size:.79rem;color:#E0736A}
+.madd-a{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.madd-a .btn:first-child{background:var(--ember);color:#fff}
+
+.mret{margin-top:14px}
+.mret summary{font-size:.78rem;color:var(--text-3);cursor:pointer;padding:7px 0}
+.mret summary:hover{color:var(--text-2)}
+.mret-w{font-size:.75rem;color:var(--text-3);line-height:1.5;margin-bottom:6px}
+.mret .mrow-cn{font-variant-numeric:tabular-nums;font-family:var(--sans)}
+
+@media (max-width:560px){
+  .mconfirm{margin-left:0}
+  .madd-f{flex-basis:100%}
+}
+
 .days{display:flex;gap:5px;flex-wrap:wrap}
 .day{padding:7px 12px;border-radius:8px;border:1px solid var(--line);font-size:.76rem;color:var(--text-3)}
 .day.on{background:var(--ember-dim);border-color:var(--ember);color:var(--text)}

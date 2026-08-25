@@ -9,7 +9,7 @@ const o=document.getElementById('o');let fails=0,n=0;
 const log=(ok,m)=>{n++;o.insertAdjacentHTML('beforeend',`<div class="l ${ok?'ok':'bad'}">${ok?'✓':'✗'} ${m}</div>`);if(!ok)fails++;};
 const head=m=>o.insertAdjacentHTML('beforeend',`<div class="h">${m}</div>`);
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-const KEY='bincotan.store.v3';
+const KEY='bincotan.store.v4';
 
 async function open_(seed){
   const f=document.createElement('iframe'); f.src='index.html?x='+Math.random()+'#/chef/records';

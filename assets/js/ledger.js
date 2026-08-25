@@ -86,6 +86,10 @@ const EVENTS = {
   'month.closed':      { label:'Month closed',       actor:'chef' },
   'price.changed':     { label:'Price changed',      actor:'chef',     keep:true },
   'item.toggled':      { label:'Item availability',  actor:'chef' },
+  'item.added':        { label:'Item added',         actor:'chef',     keep:true },
+  'item.removed':      { label:'Item removed',       actor:'chef',     keep:true },
+  'item.retired':      { label:'Item retired',       actor:'chef',     keep:true },
+  'item.restored':     { label:'Item restored',      actor:'chef' },
   'log.started':       { label:'Record opened',      actor:'system' }
 };
 

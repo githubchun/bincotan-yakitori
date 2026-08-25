@@ -112,8 +112,23 @@ const CATS = {
   sake:      { label:'Saké',      cn:'日本酒', blurb:'Bottles brought to your table.' }
 };
 
-const byId  = id => MENU.find(m => m.id === id);
-const inCat    = c => MENU.filter(m => m.cat === c && m.active !== false);
-const inCatAll = c => MENU.filter(m => m.cat === c);
+/* Three lookups, three jobs. `byId` deliberately sees everything — including
+   retired items — because an old bill has to keep resolving what it was sold. */
+const byId      = id => MENU.find(m => m.id === id);
+const inCat     = c => MENU.filter(m => m.cat === c && !m.retired && m.active !== false);
+const inCatAll  = c => MENU.filter(m => m.cat === c && !m.retired);
+const retiredIn = c => MENU.filter(m => m.cat === c && m.retired);
+
 const asset = id => `assets/img/${id}.webp`;
-const imgOf = m  => asset(m.img || m.id);
+
+/* Gino's 54 items each have a cutout from his PDF. Anything he adds himself has
+   no photo yet, so it gets a drawn skewer in a grey that reads on either theme.
+   `m.photo` is the seam for real uploads — see docs/HANDOFF.md. */
+const NO_PHOTO = 'data:image/svg+xml,' + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">` +
+  `<line x1="20" y1="84" x2="82" y2="22" stroke="#9a9a95" stroke-width="3.5" stroke-linecap="round" opacity=".5"/>` +
+  `<g fill="#9a9a95" opacity=".34">` +
+  `<circle cx="41" cy="63" r="11"/><circle cx="56" cy="48" r="11"/><circle cx="71" cy="33" r="11"/>` +
+  `</g></svg>`);
+
+const imgOf = m => m.photo || (m.noImg ? NO_PHOTO : asset(m.img || m.id));
