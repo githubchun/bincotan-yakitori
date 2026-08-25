@@ -34,6 +34,7 @@ Routes are hash-based:
 | `#/order/:id/summary` | Review, bill, PayNow deposit |
 | `#/reset` | Wipes everything back to the sample data |
 | `#/chef` | Gino's bookings inbox |
+| `#/chef/records` | The transaction record, with chain verification |
 | `#/chef/menu` | Price and availability per item |
 | `#/chef/settings` | Pricing, PayNow, contact |
 
@@ -54,6 +55,38 @@ Both sides are wired to one store, so you can run a booking end to end. Use the
    confirmed stays credited; only the shortfall is re-collected.
 6. The last **50%** is settled with Gino on the night.
 
+## The transaction record
+
+Every booking, menu submission, payment and cancellation is appended to a log
+that is never edited and never deleted. Each entry carries the SHA-256 hash of
+the entry before it, so the whole thing is a chain: alter any past entry and
+every hash after it stops matching. `#/chef/records` verifies the chain on every
+view and names the first entry that doesn't hold up.
+
+**Why this exists.** If a customer says the wrong menu turned up, Gino opens the
+booking and reads what was actually submitted, when, and by whom — with the
+total as it stood at that moment.
+
+**The emailed copy.** Every entry also renders as a plain-text email to a
+dedicated inbox, carrying the full snapshot plus both hashes. That copy matters
+because it lives outside the application: if the site is down, the database is
+lost, or its records are doubted, the mailbox is an independent second source.
+
+Two honest limits:
+
+- **Email is not immutable.** Whoever owns the mailbox can delete a message. Its
+  value is independence, not permanence. Treat the chain as the integrity
+  mechanism and the mailbox as the backup — and consider auto-forwarding to a
+  second address Gino doesn't administer.
+- **The chain detects alteration, not truncation.** Editing, deleting or
+  reordering any entry is caught. Lopping off the newest entries and stopping is
+  not, because there's nothing after them to disagree. `test-ledger.js` asserts
+  this explicitly rather than pretending otherwise. The emailed copies are what
+  close that gap: the inbox still holds what the log no longer does.
+
+Worth adding later: copy each record to the **customer** as well, so both parties
+hold the same evidence rather than only the chef.
+
 ## Availability
 
 There are no fixed service days. Gino **releases a month** on his Bookings screen,
@@ -72,14 +105,18 @@ index.html              shell — loads fonts, css, the five scripts
 assets/css/app.css      design system: "Charcoal & Ember"
 assets/js/menu-data.js  every item + SETTINGS (prices, minimums, contact)
 assets/js/pricing.js    quote() · validate() · prepSheet() — pure, no DOM
+assets/js/ledger.js     append-only record, SHA-256 chain, email rendering
 assets/js/store.js      date helpers + the booking store (Postgres, later)
 assets/js/chef.js       the chef's four screens
 assets/js/app.js        customer screens, routing, selection logic
 probe-widths.html       layout probe: every route × 360/390/768, flags overflow
 assets/img/*.webp       58 cutouts extracted from the chef's PDF
 test.js                 43 assertions over pricing, extras and the payment schedule
-test-flow.js            41 assertions over the booking lifecycle
+test-ledger.js          34 assertions over the record, including nine tamper attempts
+test-flow.js            70 assertions over the booking lifecycle and its records
 e2e.html                28-step browser walk-through of both flows (serve, then open)
+tamper.html             proves the dashboard catches an edited or deleted record
+stale.html              proves recovery from an out-of-date saved store
 build-artifact.py       inlines everything into one shareable HTML file
 ```
 

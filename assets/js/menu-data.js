@@ -20,6 +20,11 @@ const SETTINGS = {
      evenings inside it — see releasedMonths / blocked in store.js. */
   // ---- PLACEHOLDERS — replace with the chef's real details ----
   paynow: { uen: 'T00XXXXXXX', name: 'BINCOTAN YAKITORI (PLACEHOLDER)' },
+  records: {
+    // Every transaction is emailed here as an independent copy of the ledger.
+    inboxUser: 'records',
+    inboxDomain: 'placeholder.invalid'
+  },
   contact: {
     whatsapp: '6580000000',
     whatsappDisplay: '+65 8000 0000',
@@ -29,6 +34,7 @@ const SETTINGS = {
   }
 };
 SETTINGS.contact.email = SETTINGS.contact.emailUser + '@' + SETTINGS.contact.emailDomain;
+SETTINGS.records.inbox = SETTINGS.records.inboxUser + '@' + SETTINGS.records.inboxDomain;
 
 const MENU = [
   // ───────────── CHICKEN — choose 7 ─────────────

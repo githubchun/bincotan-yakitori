@@ -95,12 +95,14 @@ t('store round-trips through localStorage',
 // ── a store from an older shape must be refused, not loaded ──
 t('rejects a pre-refactor record', isUsableStore({ seq:1, blocked:[], bookings:[
   { id:'X', date:'2026-01-01', status:'menu', chicken:[], veg:[], addons:{} }] }), false);
-t('rejects a booking with no payment records', isUsableStore({ seq:1, blocked:[], releasedMonths:[],
+t('rejects a booking with no payment records', isUsableStore({ seq:1, blocked:[], releasedMonths:[], log:[],
   bookings:[{ id:'X', date:'2026-01-01', chicken:[], veg:[], addons:{} }] }), false);
-t('rejects a missing releasedMonths', isUsableStore({ seq:1, blocked:[], bookings:[] }), false);
+t('rejects a missing releasedMonths', isUsableStore({ seq:1, blocked:[], log:[], bookings:[] }), false);
 t('accepts what seedStore produces', isUsableStore(seedStore()), true);
 t('accepts an empty but well-formed store',
-  isUsableStore({ seq:0, blocked:[], releasedMonths:[], bookings:[] }), true);
+  isUsableStore({ seq:0, blocked:[], releasedMonths:[], log:[], bookings:[] }), true);
+t('rejects a store with no record log',
+  isUsableStore({ seq:0, blocked:[], releasedMonths:[], bookings:[] }), false);
 
 // ── invariants ──
 resetStore();
@@ -111,6 +113,57 @@ t('every seeded booking has payment records',
 t('seeded stages are all recognised',
   bookings().every(x => !!STATUSES[stage(x)]), true);
 t('reset restores the sample data', bookings().length, seeded);
+
+// ── every action leaves a record ──
+resetStore();
+const kinds = () => ledger().map(e => e.kind);
+const n0 = ledger().length;
+t('seeded bookings come with a history', n0 > 20, true);
+t('the seeded chain verifies', chainState().ok, true);
+
+const day2 = iso(addDays(45));
+toggleMonth(monthKey(day2));
+t('releasing a month is recorded', kinds().at(-1), 'month.released');
+
+const nb = createBooking({ date:day2, pax:12, hours:4, name:'Recorded Customer',
+                           phone:'+65 8000 0009', addr:'Anywhere' });
+t('booking is recorded', kinds().at(-1), 'booking.created');
+t('the record names the customer', ledger().at(-1).summary.includes('Recorded Customer'), true);
+t('the record captures the guest count', ledger().at(-1).data.guests, 12);
+
+confirmPayment(nb.id, 'hold');
+t('confirming a payment is recorded', kinds().at(-1), 'payment.confirmed');
+
+saveMenu(nb.id, { chicken:['liver','heart','skin','tail','thigh','wing','neck'], veg:['asparagus','shishito'] });
+t('browsing the menu is deliberately NOT recorded', kinds().at(-1), 'payment.confirmed');
+
+submitMenu(nb.id);
+t('submitting the menu is recorded', kinds().at(-1), 'menu.submitted');
+const snap = ledger().at(-1);
+t('the record lists the actual skewers', snap.data.chicken.includes('Liver'), true);
+t('by readable name, not id', snap.data.chicken.includes('liver'), false);
+t('and captures the total at that moment', snap.data.total, money(quote(bookingById(nb.id)).subtotal));
+
+reopenMenu(nb.id);
+t('reopening is recorded', kinds().at(-1), 'menu.reopened');
+t('with what the menu had been', ledger().at(-1).data.wasChicken.includes('Liver'), true);
+
+markComplete(nb.id);
+t('completion is recorded', kinds().at(-1), 'booking.completed');
+
+t('the chain still verifies after all of that', chainState().ok, true);
+t('exactly six actions produced exactly six entries', ledger().length - n0, 6);
+t('and they are the six expected ones', kinds().slice(n0),
+  ['month.released','booking.created','payment.confirmed','menu.submitted','menu.reopened','booking.completed']);
+t('entries only ever appended', ledger().every((e, i) => e.seq === i + 1), true);
+
+// cancelling removes the booking but must NOT remove its history
+const histBefore = logFor(nb.id).length;
+declineBooking(nb.id);
+t('a cancelled booking is gone from the list', bookingById(nb.id), undefined);
+t('but its history survives', logFor(nb.id).length, histBefore + 1);
+t('and the cancellation itself is recorded', kinds().at(-1), 'booking.cancelled');
+t('the chain survives a cancellation', chainState().ok, true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 __done(fail);

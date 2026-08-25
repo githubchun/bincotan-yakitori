@@ -1,0 +1,69 @@
+<!doctype html><meta charset="utf-8"><title>tamper check</title>
+<style>body{margin:0;background:#111;color:#eee;font:13px/1.6 monospace}
+.l{padding:5px 12px;border-bottom:1px solid #262626}.ok{color:#6ee787}.bad{color:#ff7b72;font-weight:700}
+.h{color:#e8a33d;padding:10px 12px;font-weight:700}
+iframe{position:absolute;left:-9999px;width:1200px;height:900px}</style>
+<div id="o"></div>
+<script>
+const o=document.getElementById('o');let fails=0,n=0;
+const log=(ok,m)=>{n++;o.insertAdjacentHTML('beforeend',`<div class="l ${ok?'ok':'bad'}">${ok?'✓':'✗'} ${m}</div>`);if(!ok)fails++;};
+const head=m=>o.insertAdjacentHTML('beforeend',`<div class="h">${m}</div>`);
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const KEY='bincotan.store.v3';
+
+async function open_(seed){
+  const f=document.createElement('iframe'); f.src='index.html?x='+Math.random()+'#/chef/records';
+  document.body.appendChild(f);
+  await new Promise(r=>{f.onload=r;});
+  await wait(900);
+  if(seed){ seed(f.contentWindow); f.contentWindow.location.reload(); await wait(1400); }
+  return f;
+}
+
+(async()=>{
+  head('1 · untouched record');
+  let f=await open_();
+  let txt=f.contentDocument.body.innerText;
+  log(/entries verified/i.test(txt),'dashboard reports the chain verified');
+  log(!/altered/i.test(txt),'no tamper warning shown');
+  const store=JSON.parse(f.contentWindow.localStorage.getItem(KEY));
+  const target=store.log.findIndex(e=>e.kind==='menu.submitted');
+  log(target>-1,'found a menu submission to tamper with (entry #'+(target+1)+')');
+  const original=JSON.stringify(store.log[target].data.chicken);
+  f.remove();
+
+  head('2 · someone edits a past menu directly in storage');
+  f=await open_(w=>{
+    const s=JSON.parse(w.localStorage.getItem(KEY));
+    const i=s.log.findIndex(e=>e.kind==='menu.submitted');
+    s.log[i].data.chicken=['Wagyu','Wagyu','Wagyu'];      // rewrite history
+    s.log[i].summary='They asked for wagyu all along';
+    w.localStorage.setItem(KEY, JSON.stringify(s));
+  });
+  txt=f.contentDocument.body.innerText;
+  log(/Record altered at entry/i.test(txt),'dashboard detects the alteration');
+  log(new RegExp('entry '+(target+1)).test(txt),'and names the exact entry ('+(target+1)+')');
+  log(/still trustworthy/i.test(txt),'and says which entries are still good');
+  f.remove();
+
+  head('3 · someone deletes an inconvenient entry');
+  f=await open_(w=>{
+    const s=JSON.parse(w.localStorage.getItem(KEY));
+    const i=s.log.findIndex(e=>e.kind==='menu.submitted');
+    s.log.splice(i,1);
+    w.localStorage.setItem(KEY, JSON.stringify(s));
+  });
+  txt=f.contentDocument.body.innerText;
+  log(/Record altered at entry/i.test(txt),'dashboard detects the deletion');
+  f.remove();
+
+  head('4 · original state restores cleanly');
+  f=await open_(w=>{ w.localStorage.removeItem(KEY); });
+  txt=f.contentDocument.body.innerText;
+  log(/entries verified/i.test(txt),'a fresh record verifies again');
+  f.remove();
+
+  o.insertAdjacentHTML('beforeend',`<div class="l ${fails?'bad':'ok'}" style="font-size:16px;padding:12px">
+    ${fails?fails+' FAILED of '+n:'ALL '+n+' PASSED'}</div>`);
+})();
+</script>

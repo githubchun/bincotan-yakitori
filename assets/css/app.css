@@ -598,3 +598,56 @@ button.ccell{cursor:pointer}
 .cal-block .cname{font-size:.7rem}
 .cal-block .cpax{font-size:.6rem}
 @media(max-width:720px){.cal-block .ccell{min-height:44px}.cal-block .cpax{display:none}}
+
+/* ══ the transaction record ══ */
+.chain{display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:var(--r);
+  border:1px solid var(--line);background:var(--surface)}
+.chain.ok{border-color:rgba(127,160,90,.45)}
+.chain.bad{border-color:rgba(196,69,59,.6);background:rgba(196,69,59,.07)}
+.chain-i{width:30px;height:30px;flex:0 0 30px;border-radius:50%;display:grid;place-items:center;
+  font-weight:700;font-size:.95rem}
+.chain.ok .chain-i{background:rgba(127,160,90,.18);color:var(--green)}
+.chain.bad .chain-i{background:rgba(196,69,59,.2);color:#E0736A}
+.chain b{font-size:.92rem}
+.chain-s{font-size:.8rem;color:var(--text-3);margin-top:4px;max-width:66ch;line-height:1.6}
+.chain-a{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.chain-a .btn{padding:9px 15px;font-size:.76rem}
+@media(max-width:720px){.chain{flex-wrap:wrap}.chain-a{margin-left:0;width:100%}}
+
+.recs{display:flex;flex-direction:column;gap:8px}
+.rec{background:var(--surface);border:1px solid var(--line-soft);border-radius:11px;padding:13px 15px}
+.rec.keep{border-left:2px solid var(--ember)}
+.rec.open{border-color:var(--line)}
+.rec-h{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;font-size:.74rem;color:var(--text-3)}
+.rec-n{font-variant-numeric:tabular-nums;color:var(--text-3)}
+.rec-l{font-size:.86rem;color:var(--text);font-weight:500}
+.rec-ref{font-variant-numeric:tabular-nums;color:var(--gold)}
+.rec-t{margin-left:auto;font-variant-numeric:tabular-nums}
+.rec-by{padding:2px 8px;border-radius:999px;background:var(--raise);font-size:.62rem;
+  letter-spacing:.09em;text-transform:uppercase}
+.rec-s{font-size:.86rem;color:var(--text-2);margin-top:6px;line-height:1.5}
+.rec-f{display:flex;gap:14px;align-items:center;margin-top:9px;flex-wrap:wrap}
+.rec-f code{font-size:.68rem;color:var(--text-3);letter-spacing:.02em}
+.tl-m{font-size:.74rem;color:var(--ember);text-align:left}
+.tl-m:hover{color:var(--ember-2);text-decoration:underline}
+
+.mail{margin-top:12px;border-top:1px solid var(--line-soft);padding-top:12px}
+.mail-h{display:flex;gap:12px;font-size:.76rem;padding:3px 0}
+.mail-h span{color:var(--text-3);min-width:58px}
+.mail-h b{font-weight:500;word-break:break-word}
+.mail-b{margin-top:10px;background:var(--ink);border:1px solid var(--line-soft);border-radius:9px;
+  padding:14px;font-size:.74rem;line-height:1.65;color:var(--text-2);
+  white-space:pre-wrap;word-break:break-word;overflow-x:auto;max-height:420px;overflow-y:auto}
+
+/* per-booking timeline */
+.tl{list-style:none;margin:0;padding:0;position:relative}
+.tl::before{content:'';position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:var(--line)}
+.tl-i{position:relative;padding:0 0 14px 22px}
+.tl-i::before{content:'';position:absolute;left:0;top:6px;width:11px;height:11px;border-radius:50%;
+  background:var(--surface);border:1.5px solid var(--line)}
+.tl-i.keep::before{border-color:var(--ember);background:var(--ember)}
+.tl-i:last-child{padding-bottom:0}
+.tl-h{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.tl-l{font-size:.82rem;font-weight:500}
+.tl-t{font-size:.7rem;color:var(--text-3);font-variant-numeric:tabular-nums;margin-left:auto}
+.tl-s{font-size:.79rem;color:var(--text-3);margin-top:2px;line-height:1.5}

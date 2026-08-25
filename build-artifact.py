@@ -15,8 +15,8 @@ imgs = {f[:-5]: data_uri(f'assets/img/{f}')
         for f in sorted(os.listdir(os.path.join(ROOT, 'assets/img'))) if f.endswith('.webp')}
 
 js = '\n'.join(read(f) for f in
-      ('assets/js/menu-data.js', 'assets/js/pricing.js', 'assets/js/store.js',
-       'assets/js/chef.js', 'assets/js/app.js'))
+      ('assets/js/menu-data.js', 'assets/js/pricing.js', 'assets/js/ledger.js',
+       'assets/js/store.js', 'assets/js/chef.js', 'assets/js/app.js'))
 js = js.replace("const asset = id => `assets/img/${id}.webp`;",
                 "const asset = id => IMG[id] || '';")
 assert "const asset = id => IMG[id]" in js, 'asset() hook not found — build would ship broken images'

@@ -85,6 +85,7 @@ function seedStore(){
     seededOn: iso(new Date()),
     /* Gino opens a month at a time, then closes individual evenings inside it. */
     releasedMonths: [thisMonth, nextMonth],
+    log: [],
     blocked: [serviceDay(12), serviceDay(15), serviceDay(41)],
     bookings: [
       { id:'BY-0418', name:'Daniel Wong', phone:'+65 9123 4567', date:serviceDay(3), time:'19:00',
@@ -143,6 +144,7 @@ function isUsableStore(raw){
     && Array.isArray(raw.bookings)
     && Array.isArray(raw.blocked)
     && Array.isArray(raw.releasedMonths)
+    && Array.isArray(raw.log)
     && typeof raw.seq === 'number'
     && raw.bookings.every(b =>
          b && typeof b.id === 'string' && typeof b.date === 'string'
@@ -159,7 +161,51 @@ let STORE = (() => {
   return seedStore();
 })();
 function saveStore(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(STORE)); } catch {} }
-function resetStore(){ STORE = seedStore(); saveStore(); }
+
+/** Append to the record. Every mutation below goes through here, never around it. */
+function record(kind, opts){
+  const e = logEvent(STORE.log, kind, opts);
+  /* In the real build this is where a transactional email goes out. Here the
+     message is rendered on demand instead — see emailFor(). */
+  saveStore();
+  return e;
+}
+
+/* Give the sample bookings a plausible history so the record isn't empty. */
+function seedLog(){
+  record('log.started', { summary:'Transaction record opened' , at:new Date(Date.now() - 40*864e5).toISOString() });
+  STORE.releasedMonths.forEach(m =>
+    record('month.released', { summary:`${m} opened for booking`, data:{ month:m },
+      at:new Date(Date.now() - 39*864e5).toISOString() }));
+  [...STORE.bookings].sort((a,b) => a.id.localeCompare(b.id)).forEach((b, i) => {
+    const t = k => new Date(Date.now() - (30 - i*3) * 864e5 + k * 36e5).toISOString();
+    record('booking.created', { ref:b.id, at:t(0),
+      summary:`${b.name} booked ${shortDate(b.date)} for ${b.pax} guests`,
+      data:{ date:b.date, time:b.time, guests:b.pax, hours:b.hours, where:b.addr, note:b.notes || '—' } });
+    (b.payments || []).forEach((p, j) => {
+      record('payment.claimed', { ref:b.id, at:t(1 + j*2),
+        summary:`${b.name} sent ${money(p.amount)} (${p.kind === 'hold' ? 'holding deposit' : 'balance to 50%'})`,
+        data:{ amount:money(p.amount), kind:p.kind, reference:b.id } });
+      if (p.confirmed) record('payment.confirmed', { ref:b.id, at:t(2 + j*2),
+        summary:`Gino confirmed ${money(p.amount)} received`,
+        data:{ amount:money(p.amount), kind:p.kind } });
+    });
+    if (b.menuLocked) record('menu.submitted', { ref:b.id, at:t(6),
+      summary:`${b.name} submitted their menu — ${b.chicken.length} chicken, ${b.veg.length} vegetable`,
+      data:{ chicken:b.chicken.map(id => byId(id)?.en || id),
+             vegetable:b.veg.map(id => byId(id)?.en || id),
+             addons:Object.fromEntries(Object.entries(b.addons).map(([k,v]) => [byId(k)?.en || k, v])),
+             total:money(quote(b).subtotal) } });
+    if (b.completed) record('booking.completed', { ref:b.id, at:t(8),
+      summary:`${shortDate(b.date)} — event completed` });
+  });
+}
+function resetStore(){ STORE = seedStore(); seedLog(); saveStore(); }
+if (!STORE.log.length) { seedLog(); }
+
+const ledger    = () => STORE.log;
+const logFor    = ref => STORE.log.filter(e => e.ref === ref);
+const chainState = () => verifyChain(STORE.log);
 
 /* ── reads ──────────────────────────────────────────── */
 const bookings    = () => STORE.bookings;
@@ -192,14 +238,18 @@ function unavailableDates(){
 /* ── writes ─────────────────────────────────────────── */
 function toggleBlocked(d){
   const i = STORE.blocked.indexOf(d);
-  i > -1 ? STORE.blocked.splice(i, 1) : STORE.blocked.push(d);
-  saveStore();
+  const closing = i === -1;
+  closing ? STORE.blocked.push(d) : STORE.blocked.splice(i, 1);
+  record(closing ? 'date.closed' : 'date.opened', {
+    summary: `${shortDate(d)} ${closing ? 'closed' : 'reopened'}`, data:{ date:d } });
 }
 /** Open or close a whole month. Closing never deletes the bookings inside it. */
 function toggleMonth(m){
   const i = STORE.releasedMonths.indexOf(m);
-  i > -1 ? STORE.releasedMonths.splice(i, 1) : STORE.releasedMonths.push(m);
-  saveStore();
+  const releasing = i === -1;
+  releasing ? STORE.releasedMonths.push(m) : STORE.releasedMonths.splice(i, 1);
+  record(releasing ? 'month.released' : 'month.closed', {
+    summary: `${m} ${releasing ? 'opened for booking' : 'closed'}`, data:{ month:m } });
 }
 
 /** A customer takes a date. It is theirs immediately — Gino doesn't approve it. */
@@ -215,19 +265,31 @@ function createBooking(f){
     ...f
   };
   STORE.bookings.push(b);
-  saveStore();
+  record('booking.created', { ref:b.id,
+    summary: `${b.name} booked ${shortDate(b.date)} for ${b.pax} guests`,
+    data:{ date:b.date, time:b.time, guests:b.pax, hours:b.hours,
+           where:b.addr, phone:b.phone, note:b.notes || '—',
+           holding:money(HOLD()) } });
   return b;
 }
 
 function declineBooking(id){
   const i = STORE.bookings.findIndex(b => b.id === id);
-  if (i > -1) { STORE.bookings.splice(i, 1); saveStore(); }
+  if (i === -1) return;
+  const b = STORE.bookings[i];
+  /* The booking goes, but its history stays — that is the point of the record. */
+  STORE.bookings.splice(i, 1);
+  record('booking.cancelled', { ref:b.id,
+    summary: `${b.name}'s booking for ${shortDate(b.date)} was cancelled`,
+    data:{ date:b.date, guests:b.pax, paid:money(paymentPlan(b).paid) } });
 }
 
 /** Live-saves the customer's picks so Gino sees progress before they submit. */
 function saveMenu(id, patch){
   const b = bookingById(id);
   if (!b || b.menuLocked) return null;
+  /* Deliberately not logged: this fires on every tap while they browse. What
+     matters in a dispute is the snapshot at submit, which menu.submitted holds. */
   Object.assign(b, patch);
   saveStore();
   return b;
@@ -235,7 +297,16 @@ function saveMenu(id, patch){
 /** Submitting locks the menu; only Gino can reopen it. */
 function submitMenu(id){
   const b = bookingById(id);
-  if (b) { b.menuLocked = true; saveStore(); }
+  if (!b || b.menuLocked) return b;
+  b.menuLocked = true;
+  const p = paymentPlan(b);
+  record('menu.submitted', { ref:b.id,
+    summary: `${b.name} submitted their menu — ${b.chicken.length} chicken, ${b.veg.length} vegetable`,
+    data:{ chicken: b.chicken.map(x => byId(x)?.en || x),
+           vegetable: b.veg.map(x => byId(x)?.en || x),
+           addons: Object.fromEntries(Object.entries(b.addons)
+                     .filter(([,n]) => n).map(([k,n]) => [byId(k)?.en || k, n])),
+           guests: b.pax, total: money(p.subtotal), dueNow: money(p.dueNow) } });
   return b;
 }
 /** Gino reopens a locked menu so the customer can change their mind. Money already
@@ -243,9 +314,14 @@ function submitMenu(id){
 function reopenMenu(id){
   const b = bookingById(id);
   if (!b) return null;
+  const before = paymentPlan(b);
   b.menuLocked = false;
   b.payments = (b.payments || []).filter(p => !(p.kind === 'menu' && !p.confirmed));
-  saveStore();
+  record('menu.reopened', { ref:b.id,
+    summary: `Gino reopened ${b.name}'s menu`,
+    data:{ wasChicken: b.chicken.map(x => byId(x)?.en || x),
+           wasVegetable: b.veg.map(x => byId(x)?.en || x),
+           wasTotal: money(before.subtotal), credited: money(before.paid) } });
   return b;
 }
 
@@ -256,19 +332,28 @@ function claimPayment(id, kind, amount){
   const existing = (b.payments || []).find(p => p.kind === kind && !p.confirmed);
   if (existing) existing.amount = amount;
   else (b.payments ||= []).push(pay(kind, amount, false));
-  saveStore();
+  record('payment.claimed', { ref:b.id,
+    summary: `${b.name} sent ${money(amount)} (${kind === 'hold' ? 'holding deposit' : 'balance to 50%'})`,
+    data:{ amount: money(amount), kind, reference: b.id } });
   return b;
 }
 function confirmPayment(id, kind){
   const b = bookingById(id);
   if (!b) return null;
+  const amt = (b.payments || []).filter(p => p.kind === kind).reduce((s, p) => s + p.amount, 0);
   (b.payments || []).filter(p => p.kind === kind).forEach(p => { p.claimed = true; p.confirmed = true; });
-  saveStore();
+  record('payment.confirmed', { ref:b.id,
+    summary: `Gino confirmed ${money(amt)} received`,
+    data:{ amount: money(amt), kind, totalPaid: money(paymentPlan(b).paid) } });
   return b;
 }
 function markComplete(id){
   const b = bookingById(id);
-  if (b) { b.completed = true; saveStore(); }
+  if (!b) return null;
+  b.completed = true;
+  record('booking.completed', { ref:b.id,
+    summary: `${shortDate(b.date)} — event completed`,
+    data:{ guests:b.pax, total:money(paymentPlan(b).subtotal), paid:money(paymentPlan(b).paid) } });
   return b;
 }
 

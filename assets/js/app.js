@@ -686,6 +686,7 @@ const ROUTES = [
   [/^order\/([\w-]+)$/,         id => Order(id)],
   [/^order\/([\w-]+)\/summary$/, id => Summary(id)],
   [/^chef$/,                    () => ChefBookings()],
+  [/^chef\/records$/,           () => ChefRecords()],
   [/^chef\/menu$/,              () => ChefMenu()],
   [/^chef\/settings$/,          () => ChefSettings()]
 ];

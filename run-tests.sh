@@ -15,5 +15,8 @@ run() {
 echo "── pricing + validation ──"
 run assets/js/menu-data.js assets/js/pricing.js test.js
 echo
+echo "── transaction record ──"
+run assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js test-ledger.js
+echo
 echo "── booking lifecycle ──"
-run assets/js/menu-data.js assets/js/pricing.js assets/js/store.js test-flow.js
+run assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js assets/js/store.js test-flow.js

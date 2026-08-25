@@ -3,6 +3,7 @@
 
 const CHEF_TABS = [
   ['#/chef',          'Bookings'],
+  ['#/chef/records',  'Records'],
   ['#/chef/menu',     'Menu'],
   ['#/chef/settings', 'Settings']
 ];
@@ -187,6 +188,7 @@ function bookingDetail(b){
     ${addonRows ? `<div class="dsec"><small>Add-ons</small>${addonRows}</div>` : ''}
 
     ${b.chicken.length ? prepPanel(b) : ''}
+    ${historyPanel(b.id)}
   </div>`;
 }
 
@@ -209,6 +211,30 @@ function detailActions(b){
                              <button class="btn btn-ghost" data-done="${b.id}">Mark done</button>`;
     default:         return `<span class="muted" style="font-size:.84rem">Completed ${whenLabel(b.date).toLowerCase()}.</span>`;
   }
+}
+
+/** What happened to this booking, oldest first. Read-only, always. */
+function historyPanel(ref){
+  const evs = logFor(ref);
+  if (!evs.length) return '';
+  return `<div class="dsec"><small>History · ${evs.length} record${evs.length===1?'':'s'}</small>
+    <ol class="tl">
+      ${evs.map(e => {
+        const m = EVENTS[e.kind] || { label:e.kind, actor:'system' };
+        return `<li class="tl-i ${m.keep ? 'keep' : ''}">
+          <div class="tl-h">
+            <span class="tl-l">${m.label}</span>
+            <span class="tl-t">${new Date(e.at).toLocaleString('en-SG',{dateStyle:'medium',timeStyle:'short'})}</span>
+          </div>
+          <div class="tl-s">${esc(e.summary)}</div>
+          <button class="tl-m" data-mail="${e.seq}">View the email that was sent →</button>
+        </li>`;
+      }).join('')}
+    </ol>
+    <p class="hint" style="margin-top:10px">Entries are never edited or deleted. Each is chained
+    to the one before it, and a copy of every one is emailed to
+    <span class="ph">${esc(SETTINGS.records.inbox)}</span>.</p>
+  </div>`;
 }
 
 function prepPanel(b){
@@ -286,6 +312,75 @@ function chefCalGrid(){
     ${released ? '' : `<p class="cal-closed" style="padding:14px 0 2px">
       Nobody can book this month until you release it.</p>`}
   </div>`;
+}
+
+/* ── Records ──────────────────────────────────────────
+   The whole log, newest first, with the chain checked on every view. */
+let recFilter = '';
+let mailOpen  = null;
+
+function ChefRecords(){
+  const all = ledger();
+  const v = chainState();
+  const refs = [...new Set(all.map(e => e.ref).filter(Boolean))].sort().reverse();
+  const evs = (recFilter ? all.filter(e => e.ref === recFilter) : all).slice().reverse();
+
+  return chefShell('#/chef/records', `
+    <div class="chef-top"><div>
+      <h1 class="display chef-h1">Records</h1>
+      <p class="muted" style="font-size:.88rem">Every booking, menu and payment, in the order it happened.
+      Nothing here can be edited or removed — not by you, not by a customer.</p>
+    </div></div>
+
+    <div class="chain ${v.ok ? 'ok' : 'bad'}">
+      <div class="chain-i">${v.ok ? '✓' : '!'}</div>
+      <div>
+        <b>${v.ok ? 'All ' + v.checked + ' entries verified' : 'Record altered at entry ' + v.brokenAt}</b>
+        <div class="chain-s">${v.ok
+          ? 'Each entry carries the fingerprint of the one before it, and every fingerprint matches. Nothing has been changed since it was written.'
+          : esc(v.reason) + '. Entries before that point are still trustworthy.'}</div>
+      </div>
+      <div class="chain-a">
+        <button class="btn btn-ghost" id="recCopy">Copy all</button>
+        <button class="btn btn-ghost" id="recDownload">Download</button>
+      </div>
+    </div>
+
+    <div class="cfilters" style="margin:20px 0 16px">
+      <button class="chip ${recFilter ? '' : 'on'}" data-ref="">Everything (${all.length})</button>
+      ${refs.map(r => `<button class="chip ${recFilter===r?'on':''}" data-ref="${r}">${r}</button>`).join('')}
+    </div>
+
+    <div class="recs">
+      ${evs.length ? evs.map(e => recRow(e)).join('')
+        : '<div class="notice notice-info"><span>◆</span><div>Nothing recorded for that booking.</div></div>'}
+    </div>`);
+}
+
+function recRow(e){
+  const m = EVENTS[e.kind] || { label:e.kind, actor:'system' };
+  const open = mailOpen === e.seq;
+  const mail = emailFor(e, bookingById(e.ref));
+  return `<article class="rec ${m.keep ? 'keep' : ''} ${open ? 'open' : ''}">
+    <div class="rec-h">
+      <span class="rec-n">#${e.seq}</span>
+      <span class="rec-l">${m.label}</span>
+      <span class="rec-ref">${e.ref || '—'}</span>
+      <span class="rec-t">${new Date(e.at).toLocaleString('en-SG',{dateStyle:'medium',timeStyle:'short'})}</span>
+      <span class="rec-by">${m.actor}</span>
+    </div>
+    <div class="rec-s">${esc(e.summary)}</div>
+    <div class="rec-f">
+      <code title="This entry's fingerprint">${e.hash.slice(0,16)}…</code>
+      <button class="tl-m" data-mail="${e.seq}">${open ? 'Hide the email' : 'View the email that was sent'}</button>
+    </div>
+    ${open ? `<div class="mail">
+      <div class="mail-h"><span>To</span><b>${esc(mail.to)}</b></div>
+      <div class="mail-h"><span>Subject</span><b>${esc(mail.subject)}</b></div>
+      <pre class="mail-b">${esc(mail.body)}</pre>
+      <button class="btn btn-ghost" data-mailcopy="${e.seq}" style="margin-top:10px">Copy this email</button>
+    </div>` : ''}
+  </article>`;
 }
 
 /* ── Menu manager ─────────────────────────────────────── */
@@ -435,6 +530,39 @@ function wireChef(path){
   $$('[data-block]').forEach(el => el.addEventListener('click', () => {
     toggleBlocked(el.dataset.block); rerender();
   }));
+
+  /* records */
+  $$('[data-ref]').forEach(el => el.addEventListener('click', () => {
+    recFilter = el.dataset.ref; mailOpen = null; rerender();
+  }));
+  $$('[data-mail]').forEach(el => el.addEventListener('click', () => {
+    const n = +el.dataset.mail;
+    mailOpen = mailOpen === n ? null : n;
+    if (pathOf() !== 'chef/records'){ recFilter = ''; location.hash = '#/chef/records'; }
+    else rerender();
+  }));
+  $$('[data-mailcopy]').forEach(el => el.addEventListener('click', async () => {
+    const e = ledger().find(x => x.seq === +el.dataset.mailcopy);
+    const m = emailFor(e, bookingById(e.ref));
+    try { await navigator.clipboard.writeText(`To: ${m.to}\nSubject: ${m.subject}\n\n${m.body}`);
+          el.textContent = 'Copied ✓'; }
+    catch { el.textContent = 'Copy failed — select the text above'; }
+    setTimeout(() => { el.textContent = 'Copy this email'; }, 2200);
+  }));
+  $('#recCopy')?.addEventListener('click', async e => {
+    try { await navigator.clipboard.writeText(ledgerText(ledger(), bookingById));
+          e.target.textContent = 'Copied ✓'; }
+    catch { e.target.textContent = 'Copy failed'; }
+    setTimeout(() => { e.target.textContent = 'Copy all'; }, 2200);
+  });
+  $('#recDownload')?.addEventListener('click', () => {
+    const blob = new Blob([ledgerText(ledger(), bookingById)], { type:'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bincotan-records-${iso(new Date())}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
 
   /* menu manager */
   $$('[data-toggle]').forEach(el => el.addEventListener('click', () => {
