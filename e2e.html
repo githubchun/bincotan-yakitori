@@ -170,7 +170,7 @@ f.onload=async()=>{try{
   const daniel=store().bookings.find(b=>b.addons['king-prawn']);
   const wasTotal=W().quote(daniel).subtotal;
   qa('[data-rm=king-prawn]')[0].click(); await wait(280);
-  log(/already list this/.test(txt()),'an item in use names the bookings that have it');
+  log(/already lists? this/.test(txt()),'an item in use names the bookings that have it');
   qa('[data-rmyes=king-prawn]')[0].click(); await wait(340);
   log(!eva("inCatAll('premium')").some(m=>m.id==='king-prawn'),'it leaves Gino\'s list');
   log(!!eva("byId('king-prawn')"),'but it is still resolvable');
