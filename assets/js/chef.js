@@ -3,7 +3,6 @@
 
 const CHEF_TABS = [
   ['#/chef',          'Bookings'],
-  ['#/chef/calendar', 'Calendar'],
   ['#/chef/menu',     'Menu'],
   ['#/chef/settings', 'Settings']
 ];
@@ -33,22 +32,18 @@ function chefShell(active, body){
 /* ── Bookings ─────────────────────────────────────────── */
 function ChefBookings(){
   const todo = actionable();
-  const next = nextEvent();
-  const counts = {
-    req:  todo.filter(b => b.status === 'req').length,
-    conf: todo.filter(b => b.status === 'conf').length,
-    menu: todo.filter(b => b.status === 'menu').length
-  };
-  const list = chefFilter === 'past'
-    ? past()
-    : chefFilter === 'upcoming' ? upcoming() : todo;
+  const counts = {};
+  todo.forEach(b => { const k = stage(b); counts[k] = (counts[k] || 0) + 1; });
 
+  const list = chefFilter === 'past' ? past()
+             : chefFilter === 'upcoming' ? upcoming()
+             : todo;
   if (!chefSel || !list.some(b => b.id === chefSel)) chefSel = list[0]?.id || null;
   const sel = bookingById(chefSel);
 
-  const alert = (n, label, status) => n
-    ? `<button class="alert ${status}" data-filter="action" data-status="${status}">
-         <b>${n}</b><span>${label}</span></button>` : '';
+  const alert = (k, label, cls) => counts[k]
+    ? `<button class="alert ${cls}" data-filter="action" data-stage="${k}">
+         <b>${counts[k]}</b><span>${label}</span></button>` : '';
 
   return chefShell('#/chef', `
     <div class="chef-top">
@@ -59,14 +54,31 @@ function ChefBookings(){
         </p>
       </div>
       <div class="alerts">
-        ${alert(counts.req,  counts.req === 1 ? 'new request' : 'new requests', 'a-req')}
-        ${alert(counts.conf, 'waiting on menu', 'a-conf')}
-        ${alert(counts.menu, 'deposit unpaid', 'a-menu')}
+        ${alert('hold',     counts.hold === 1 ? 'deposit to confirm' : 'deposits to confirm', 'a-req')}
+        ${alert('building', 'choosing a menu', 'a-conf')}
+        ${alert('menuIn',   'not paid to 50%', 'a-conf')}
+        ${alert('menuPaid', 'payment to confirm', 'a-menu')}
         ${todo.length ? '' : '<span class="alert a-ok"><b>✓</b><span>all clear</span></span>'}
       </div>
     </div>
 
-    ${next ? nextUpCard(next) : ''}
+    <section class="cal-block">
+      <div class="cal-block-head">
+        <div>
+          <div class="eyebrow">Your calendar</div>
+          <p class="muted" style="font-size:.82rem;margin-top:4px">
+            Release a month to let people book it, then close any evenings you want back.</p>
+        </div>
+        <div id="monthBtn"></div>
+      </div>
+      <div id="ccalMount">${chefCalGrid()}</div>
+      <div class="cal-legend" style="margin-top:14px">
+        <span><i class="dot" style="background:var(--ember)"></i>Booked</span>
+        <span><i class="dot" style="background:var(--gold)"></i>Needs you</span>
+        <span><i class="dot" style="background:var(--surface-2);border:1px solid var(--line)"></i>Open to book</span>
+        <span><i class="dot" style="background:var(--line)"></i>Closed by you</span>
+      </div>
+    </section>
 
     <div class="cfilters">
       ${[['action',`Needs you (${todo.length})`],['upcoming',`Upcoming (${upcoming().length})`],['past','Past']]
@@ -82,32 +94,6 @@ function ChefBookings(){
     </div>`);
 }
 
-function nextUpCard(b){
-  const q = quote({ hours:b.hours, addons:b.addons });
-  const n = daysUntil(b.date);
-  return `<section class="nextup">
-    <div class="nextup-l">
-      <div class="eyebrow">Next up</div>
-      <div class="nextup-when">${whenLabel(b.date)}</div>
-      <div class="nextup-date">${prettyDate(b.date)} · ${b.time}</div>
-      <div class="nextup-meta">${esc(b.name)} · ${b.pax} guests · ${b.hours} hrs · ${esc(b.addr)}</div>
-      <div class="nextup-acts">
-        <a class="btn btn-primary" href="${waLink(b, 'checkin')}" target="_blank" rel="noopener">Message ${esc(first(b))}</a>
-        <button class="btn btn-ghost" data-open="${b.id}">Open booking</button>
-        ${b.chicken.length ? `<button class="btn btn-ghost" data-print="${b.id}">Prep sheet</button>` : ''}
-      </div>
-    </div>
-    <div class="nextup-r">
-      <div class="nextup-num"><small>Total</small><b>${money(q.subtotal)}</b></div>
-      <div class="nextup-num"><small>${b.status==='paid'?'Deposit paid':'Deposit due'}</small>
-        <b class="${b.status==='paid'?'ok':'warn'}">${money(q.deposit)}</b></div>
-      <div class="nextup-num"><small>Balance on the night</small><b>${money(q.balance)}</b></div>
-      ${n <= 3 && b.chicken.length
-        ? `<div class="nextup-tick">${skewerCount(b)} skewers to prep</div>` : ''}
-    </div>
-  </section>`;
-}
-
 const first  = b => esc(b.name.split(' ')[0]);
 const waText = {
   confirm: b => `Hi ${b.name.split(' ')[0]}! Your yakitori night on ${prettyDate(b.date)} is confirmed. Here's your private link to choose your 7 chicken + 2 vegetable skewers: ${orderUrl(b.id)}`,
@@ -119,25 +105,26 @@ const waLink = (b, kind) =>
   `https://wa.me/${b.phone.replace(/\D/g,'')}?text=${encodeURIComponent(waText[kind](b))}`;
 
 function bookingRow(b){
-  const s = STATUSES[b.status];
+  const s = statusOf(b);
   return `<button class="bk ${b.id===chefSel?'on':''}" data-bk="${b.id}">
     <div class="bk-top">
       <span class="bk-name">${esc(b.name)}</span>
       <span class="pill ${s.cls}">${s.label}</span>
     </div>
     <div class="bk-date">${shortDate(b.date)} · ${b.pax} pax · ${b.time}</div>
-    ${b.status === 'menu' && b.depositClaimed
-        ? '<div class="bk-todo hot">Says they’ve paid — confirm it landed</div>'
+    ${stage(b) === 'menuPaid' || stage(b) === 'hold'
+        ? `<div class="bk-todo hot">${s.todo}</div>`
         : s.todo ? `<div class="bk-todo">${s.todo}</div>` : ''}
   </button>`;
 }
 
 function bookingDetail(b){
-  const q = quote({ hours:b.hours, addons:b.addons });
-  const s = STATUSES[b.status];
-  const chips = ids => ids.length
-    ? ids.map(id => { const m = byId(id); return `<span class="mchip">
-        <img src="${imgOf(m)}" alt="">${esc(m.en)}</span>`; }).join('')
+  const p = paymentPlan(b);
+  const s = statusOf(b);
+  const st = stage(b);
+  const chips = (ids, included) => ids.length
+    ? ids.map((id, i) => { const m = byId(id); return `<span class="mchip ${i >= included ? 'x' : ''}">
+        <img src="${imgOf(m)}" alt=""><span>${esc(m.en)}</span>${i >= included ? '<em>extra</em>' : ''}</span>`; }).join('')
     : '<span class="muted" style="font-size:.84rem">Not chosen yet</span>';
 
   const addonRows = Object.entries(b.addons).filter(([,n]) => n).map(([id,n]) => {
@@ -159,53 +146,68 @@ function bookingDetail(b){
       <div><small>When</small><b>${shortDate(b.date)} · ${b.time}</b></div>
       <div><small>Guests</small><b>${b.pax}</b></div>
       <div><small>Hours</small><b>${b.hours}</b></div>
-      <div><small>Total</small><b>${money(q.subtotal)}</b></div>
+      <div><small>Total</small><b>${money(p.subtotal)}</b></div>
     </div>
 
     <div class="kv"><span>Where</span><b>${esc(b.addr)}</b></div>
     ${b.notes ? `<div class="dnote"><small>Their note</small>${esc(b.notes)}</div>` : ''}
 
     <div class="dacts">${detailActions(b)}</div>
-    ${b.status === 'conf' || (b.status === 'menu' && !b.depositClaimed)
+    ${!b.completed
       ? `<div class="linkbox"><small>Their private menu link</small><code>${esc(orderUrl(b.id))}</code></div>` : ''}
-    ${b.status === 'menu' && b.depositClaimed
-      ? `<div class="notice notice-info" style="margin-bottom:4px"><span>◆</span><div>
-          <b>${esc(first(b))} says the deposit is sent.</b> Check PayNow for reference <b>${b.id}</b>,
-          then confirm above.</div></div>` : ''}
+    ${st === 'hold' || st === 'menuPaid'
+      ? `<div class="notice notice-info" style="margin-bottom:14px"><span>◆</span><div>
+          <b>${esc(first(b))} says ${money(p.pending)} is sent.</b> Check PayNow for reference
+          <b>${b.id}</b>, then confirm above.</div></div>` : ''}
 
-    <div class="dsec"><small>Their menu</small>
-      <div class="mchips">${chips(b.chicken)}</div>
-      <div class="mchips" style="margin-top:8px">${chips(b.veg)}</div>
+    <div class="dsec"><small>Money</small>
+      <div class="sched">
+        <div class="sched-r ${p.paid >= p.hold ? 'ok' : 'due'}">
+          <span>Holding deposit</span><b>${money(p.hold)}</b>
+          <em>${p.paid >= p.hold ? 'in' : 'pending'}</em></div>
+        <div class="sched-r ${st === 'set' ? 'ok' : p.outstanding > 0 ? 'due' : 'wait'}">
+          <span>To reach 50%</span><b>${money(Math.max(0, p.byMenu - p.hold))}</b>
+          <em>${st === 'set' ? 'in' : p.pending ? 'pending' : 'owed'}</em></div>
+        <div class="sched-r"><span>On the night</span><b>${money(p.balance)}</b><em>later</em></div>
+      </div>
+      <div class="kv" style="margin-top:8px"><span>Received so far</span>
+        <b class="${p.paid >= p.byMenu ? 'ok' : 'warn'}">${money(p.paid)} of ${money(p.byMenu)}</b></div>
     </div>
 
-    ${addonRows ? `<div class="dsec"><small>Add-ons</small>${addonRows}
-      <div class="kv" style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px">
-        <span>Deposit ${b.status==='paid'||b.status==='done'?'received':'due'}</span>
-        <b class="${b.status==='paid'||b.status==='done'?'ok':'warn'}">${money(q.deposit)}</b></div>
-    </div>` : ''}
+    <div class="dsec"><small>Their menu ${b.menuLocked ? '🔒 locked' : '· still open to them'}</small>
+      <div class="mchips">${chips(b.chicken, SETTINGS.includedChicken)}</div>
+      <div class="mchips" style="margin-top:8px">${chips(b.veg, SETTINGS.includedVeg)}</div>
+      ${b.menuLocked && !b.completed
+        ? `<button class="btn btn-ghost" style="margin-top:12px;padding:9px 16px;font-size:.78rem"
+             data-unlock="${b.id}">Reopen their menu</button>
+           <p class="hint" style="margin-top:8px">They can change their choices again. Anything already
+           paid stays credited — only the shortfall is re-collected.</p>` : ''}
+    </div>
+
+    ${addonRows ? `<div class="dsec"><small>Add-ons</small>${addonRows}</div>` : ''}
 
     ${b.chicken.length ? prepPanel(b) : ''}
   </div>`;
 }
 
 function detailActions(b){
+  const p = paymentPlan(b);
   const wa = (kind, label, cls='btn-ghost') =>
     `<a class="btn ${cls}" href="${waLink(b, kind)}" target="_blank" rel="noopener">${label}</a>`;
-  switch (b.status){
-    case 'req':  return `<button class="btn btn-primary" data-do="confirm" data-id="${b.id}">Confirm the date</button>
-                         <button class="btn btn-ghost danger" data-do="decline" data-id="${b.id}">Decline</button>`;
-    case 'conf': return `${wa('confirm', `WhatsApp ${first(b)} the link`, 'btn-primary')}
-                         <button class="btn btn-ghost" data-copy="${b.id}">Copy link</button>
-                         <a class="btn btn-ghost" href="${orderPath(b.id)}">Open it yourself</a>`;
-    case 'menu': return b.depositClaimed
-      ? `<button class="btn btn-primary" data-do="paid" data-id="${b.id}">Confirm ${money(quote({hours:b.hours,addons:b.addons}).deposit)} landed</button>
-         ${wa('deposit', `Message ${first(b)}`)}`
-      : `<button class="btn btn-primary" data-do="paid" data-id="${b.id}">Mark deposit received</button>
-         ${wa('deposit', 'Ask for the deposit')}`;
-    case 'paid': return `${wa('checkin', `Message ${first(b)}`, 'btn-primary')}
-                         <button class="btn btn-ghost" data-print="${b.id}">Print prep sheet</button>
-                         <button class="btn btn-ghost" data-do="done" data-id="${b.id}">Mark done</button>`;
-    default:     return `<span class="muted" style="font-size:.84rem">Completed ${whenLabel(b.date).toLowerCase()}.</span>`;
+  switch (stage(b)){
+    case 'hold':     return `<button class="btn btn-primary" data-pay="hold" data-id="${b.id}">Confirm ${money(p.hold)} landed</button>
+                             ${wa('confirm', `Message ${first(b)}`)}
+                             <button class="btn btn-ghost danger" data-do="decline" data-id="${b.id}">Cancel booking</button>`;
+    case 'building': return `${wa('nudge', 'Nudge them to pick', 'btn-primary')}
+                             <a class="btn btn-ghost" href="${orderPath(b.id)}">Open their menu</a>`;
+    case 'menuIn':   return `${wa('deposit', `Ask for ${money(p.dueNow)}`, 'btn-primary')}
+                             <button class="btn btn-ghost" data-pay="menu" data-id="${b.id}">Mark ${money(p.dueNow)} received</button>`;
+    case 'menuPaid': return `<button class="btn btn-primary" data-pay="menu" data-id="${b.id}">Confirm ${money(p.pending)} landed</button>
+                             ${wa('deposit', `Message ${first(b)}`)}`;
+    case 'set':      return `${wa('checkin', `Message ${first(b)}`, 'btn-primary')}
+                             <button class="btn btn-ghost" data-print="${b.id}">Print prep sheet</button>
+                             <button class="btn btn-ghost" data-done="${b.id}">Mark done</button>`;
+    default:         return `<span class="muted" style="font-size:.84rem">Completed ${whenLabel(b.date).toLowerCase()}.</span>`;
   }
 }
 
@@ -232,61 +234,57 @@ function prepPanel(b){
 /* ── Calendar ─────────────────────────────────────────── */
 let chefMonth = (() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; })();
 
-function ChefCalendar(){
-  return chefShell('#/chef/calendar', `
-    <div class="chef-top"><div>
-      <h1 class="display chef-h1">Calendar</h1>
-      <p class="muted" style="font-size:.88rem">Tap an open evening to block it off. Tap a booking to open it.</p>
-    </div></div>
-    <div id="ccalMount">${chefCalGrid()}</div>
-    <div class="cal-legend" style="margin-top:18px">
-      <span><i class="dot" style="background:var(--ember)"></i>Booked</span>
-      <span><i class="dot" style="background:var(--gold)"></i>Needs you</span>
-      <span><i class="dot" style="background:var(--surface-2);border:1px solid var(--line)"></i>Open</span>
-      <span><i class="dot" style="background:var(--line)"></i>Blocked or closed</span>
-    </div>`);
+function monthControl(){
+  const m = monthKey(iso(chefMonth));
+  const open = isReleased(m);
+  const label = chefMonth.toLocaleDateString('en-SG', { month:'long' });
+  return `<button class="btn ${open ? 'btn-ghost' : 'btn-primary'}" data-month="${m}">
+    ${open ? `Close ${label}` : `Release ${label}`}</button>`;
 }
 
 function chefCalGrid(){
   const y = chefMonth.getFullYear(), mo = chefMonth.getMonth();
   const start = new Date(y, mo, 1).getDay(), days = new Date(y, mo + 1, 0).getDate();
   const today = addDays(0), minMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const m = monthKey(iso(new Date(y, mo, 1)));
+  const released = isReleased(m);
   const cells = [];
   for (let i = 0; i < start; i++) cells.push('<div></div>');
 
   for (let d = 1; d <= days; d++){
-    const date = new Date(y, mo, d), s = iso(date);
-    const isService = SETTINGS.serviceDays.includes(date.getDay());
+    const date = new Date(y, mo, d), key = iso(date);
     const past = date < today;
-    const bk = bookingOn(s);
+    const bk = bookingOn(key);
     let cls = 'ccell', inner = `<span class="cnum">${d}</span>`, attr = '';
 
     if (bk){
-      const needs = NEEDS_ACTION.includes(bk.status);
-      cls += needs ? ' c-todo' : ' c-booked';
+      cls += NEEDS_ACTION.includes(stage(bk)) ? ' c-todo' : ' c-booked';
       inner += `<span class="cname">${esc(bk.name.split(' ')[0])}</span><span class="cpax">${bk.pax} pax</span>`;
       attr = `data-open="${bk.id}"`;
-    } else if (isBlocked(s)){
-      cls += ' c-blocked'; inner += '<span class="cname">Blocked</span>';
-      attr = past ? '' : `data-block="${s}"`;
-    } else if (!isService || past){
+    } else if (!released || past){
       cls += ' c-off';
+    } else if (isBlocked(key)){
+      cls += ' c-blocked'; inner += '<span class="cname">Closed</span>';
+      attr = `data-block="${key}"`;
     } else {
-      cls += ' c-open'; attr = `data-block="${s}"`;
+      cls += ' c-open'; attr = `data-block="${key}"`;
     }
     cells.push(`<${attr ? 'button' : 'div'} class="${cls}" ${attr}>${inner}</${attr ? 'button' : 'div'}>`);
   }
 
-  return `<div class="ccal">
+  return `<div class="ccal ${released ? '' : 'closed'}">
     <div class="cal-head">
       <button type="button" id="ccPrev" ${chefMonth <= minMonth ? 'disabled' : ''}>‹</button>
-      <strong>${chefMonth.toLocaleDateString('en-SG',{month:'long',year:'numeric'})}</strong>
+      <strong>${chefMonth.toLocaleDateString('en-SG',{month:'long',year:'numeric'})}
+        ${released ? '' : '<span class="mclosed">not released</span>'}</strong>
       <button type="button" id="ccNext">›</button>
     </div>
     <div class="ccal-grid">
       ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
       ${cells.join('')}
     </div>
+    ${released ? '' : `<p class="cal-closed" style="padding:14px 0 2px">
+      Nobody can book this month until you release it.</p>`}
   </div>`;
 }
 
@@ -347,13 +345,17 @@ function ChefSettings(){
           ${f('Minimum guests', SETTINGS.minPax)}
         </div>
         <div class="row">
-          ${f('Deposit', SETTINGS.depositPct * 100 + '%')}
-          ${f('Change cut-off', SETTINGS.cutoffHours + ' hours')}
+          ${f('Extra skewer', '$' + SETTINGS.extraSkewerPrice, 'Placeholder — per skewer, beyond the included 7 + 2.')}
+          ${f('Minimum per extra type', SETTINGS.extraSkewerMinQty + ' skewers')}
         </div>
-        <div class="field"><label>Available days</label>
-          <div class="days">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i) =>
-            `<span class="day ${SETTINGS.serviceDays.includes(i)?'on':''}">${d}</span>`).join('')}</div>
+        <div class="row">
+          ${f('To hold a date', SETTINGS.holdPct * 100 + '% of ' + money(minimumSpend()))}
+          ${f('Paid by menu confirmation', SETTINGS.byMenuPct * 100 + '% of the total')}
         </div>
+        ${f('Change cut-off', SETTINGS.cutoffHours + ' hours')}
+        <div class="notice notice-info" style="margin-top:4px"><span>◆</span><div>
+          Availability is no longer a fixed set of weekdays. You release a month on the
+          Bookings screen, then close whichever evenings you want back.</div></div>
       </div>
       <div>
         <div class="panel">
@@ -384,51 +386,57 @@ function wireChef(path){
 
   $$('[data-filter]').forEach(el => el.addEventListener('click', () => {
     chefFilter = el.dataset.filter;
-    if (el.dataset.status){
-      const map = { 'a-req':'req', 'a-conf':'conf', 'a-menu':'menu' };
-      chefSel = actionable().find(b => b.status === map[el.dataset.status])?.id || chefSel;
-    } else chefSel = null;
+    if (el.dataset.stage) chefSel = actionable().find(b => stage(b) === el.dataset.stage)?.id || chefSel;
+    else chefSel = null;
     rerender();
   }));
 
   $$('[data-open]').forEach(el => el.addEventListener('click', () => {
     const b = bookingById(el.dataset.open);
     chefSel = b.id;
-    chefFilter = NEEDS_ACTION.includes(b.status) ? 'action' : 'upcoming';
-    if (pathOf() !== 'chef') location.hash = '#/chef'; else rerender();
+    chefFilter = NEEDS_ACTION.includes(stage(b)) ? 'action' : (b.completed ? 'past' : 'upcoming');
+    rerender();
+    $('#bkDetail')?.scrollIntoView({ behavior:'smooth', block:'start' });
   }));
 
-  $$('[data-do]').forEach(el => el.addEventListener('click', () => {
-    const id = el.dataset.id;
-    if (el.dataset.do === 'decline'){
-      if (!confirm('Decline and remove this request?')) return;
-      declineBooking(id); chefSel = null;
-    } else {
-      setStatus(id, { confirm:'conf', menu:'menu', paid:'paid', done:'done' }[el.dataset.do]);
-    }
-    rerender();
+  $$('[data-pay]').forEach(el => el.addEventListener('click', () => {
+    confirmPayment(el.dataset.id, el.dataset.pay); rerender();
+  }));
+  $$('[data-done]').forEach(el => el.addEventListener('click', () => {
+    markComplete(el.dataset.done); rerender();
+  }));
+  $$('[data-unlock]').forEach(el => el.addEventListener('click', () => {
+    if (!confirm('Reopen this menu?\n\nThey can change their choices again. Anything already confirmed stays credited.')) return;
+    reopenMenu(el.dataset.unlock); rerender();
+  }));
+  $$('[data-do=decline]').forEach(el => el.addEventListener('click', () => {
+    if (!confirm('Cancel this booking and free the evening?')) return;
+    declineBooking(el.dataset.id); chefSel = null; rerender();
   }));
 
   $$('[data-copy]').forEach(el => el.addEventListener('click', async () => {
-    const url = orderUrl(el.dataset.copy);
-    try { await navigator.clipboard.writeText(url); el.textContent = 'Copied ✓'; }
+    try { await navigator.clipboard.writeText(orderUrl(el.dataset.copy)); el.textContent = 'Copied ✓'; }
     catch { el.textContent = 'Copy failed — select it below'; }
     setTimeout(() => { el.textContent = 'Copy link'; }, 2200);
   }));
 
   $$('[data-print]').forEach(el => el.addEventListener('click', () => {
-    chefSel = el.dataset.print;
-    chefFilter = 'upcoming';
-    render();
+    chefSel = el.dataset.print; render();
     requestAnimationFrame(() => window.print());
   }));
 
+  /* calendar */
+  $('#monthBtn') && ($('#monthBtn').innerHTML = monthControl());
   $('#ccPrev')?.addEventListener('click', () => { chefMonth.setMonth(chefMonth.getMonth()-1); rerender(); });
   $('#ccNext')?.addEventListener('click', () => { chefMonth.setMonth(chefMonth.getMonth()+1); rerender(); });
+  $$('[data-month]').forEach(el => el.addEventListener('click', () => {
+    toggleMonth(el.dataset.month); rerender();
+  }));
   $$('[data-block]').forEach(el => el.addEventListener('click', () => {
     toggleBlocked(el.dataset.block); rerender();
   }));
 
+  /* menu manager */
   $$('[data-toggle]').forEach(el => el.addEventListener('click', () => {
     const m = byId(el.dataset.toggle); m.active = m.active === false; rerender();
   }));

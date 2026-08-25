@@ -34,7 +34,6 @@ Routes are hash-based:
 | `#/order/:id/summary` | Review, bill, PayNow deposit |
 | `#/reset` | Wipes everything back to the sample data |
 | `#/chef` | Gino's bookings inbox |
-| `#/chef/calendar` | Month view; tap an open evening to block it |
 | `#/chef/menu` | Price and availability per item |
 | `#/chef/settings` | Pricing, PayNow, contact |
 
@@ -43,17 +42,23 @@ Routes are hash-based:
 Both sides are wired to one store, so you can run a booking end to end. Use the
 **Customer / Gino** switch in the prototype strip at the top of every page.
 
-1. **Customer** → *Reserve* → pick an evening, fill in the form, send the request.
-2. **Gino** → the request is in his inbox → **Confirm the date**. He now has the
-   private link, with a copy button and a pre-written WhatsApp message.
-3. **Customer** → open that link → choose 7 chicken + 2 vegetable, add extras,
-   watch the total move → **Review & confirm**.
-4. **Customer** → PayNow screen → **I've paid the deposit**.
-5. **Gino** → the booking now says *"says the deposit is sent"* → **Confirm it landed**.
-6. **Customer** → the summary reads *Deposit received*, and the menu locks.
+1. **Customer** → *Reserve* → pick an evening and book it. The date is taken
+   immediately — Gino never approves it — against a **$70 holding deposit**
+   (10% of the $700 minimum).
+2. **Customer** → choose skewers right away, no waiting. 7 chicken + 2 vegetable
+   are included; take more types at **$5 a skewer, one per guest, minimum 10**.
+3. **Customer** → **Submit & pay**. The menu locks, and the top-up brings the
+   total paid to **50% of the bill**.
+4. **Gino** → confirms each payment landed in PayNow.
+5. **Gino** → **Reopen their menu** if they want to change something. Money already
+   confirmed stays credited; only the shortfall is re-collected.
+6. The last **50%** is settled with Gino on the night.
 
-Along the way: that evening disappears from the public calendar the moment the
-request is made, and the menu stays editable until 72 hours before the event.
+## Availability
+
+There are no fixed service days. Gino **releases a month** on his Bookings screen,
+then closes individual evenings inside it. Anything in an unreleased month is
+simply not offered.
 
 **Reset data** in the top strip puts everything back to the sample bookings.
 
@@ -72,8 +77,9 @@ assets/js/chef.js       the chef's four screens
 assets/js/app.js        customer screens, routing, selection logic
 probe-widths.html       layout probe: every route × 360/390/768, flags overflow
 assets/img/*.webp       58 cutouts extracted from the chef's PDF
-test.js                 26 assertions over pricing + validation
-test-flow.js            29 assertions over the booking lifecycle
+test.js                 43 assertions over pricing, extras and the payment schedule
+test-flow.js            41 assertions over the booking lifecycle
+e2e.html                28-step browser walk-through of both flows (serve, then open)
 build-artifact.py       inlines everything into one shareable HTML file
 ```
 
@@ -84,11 +90,19 @@ live estimate — the client's number is shown, the server's number is charged.
 ## Pricing, as encoded
 
 ```
-base            = $500 session + $200 chef service (4 hrs)   = $700, serves 10
-extra hours     = $50 each beyond 4
-add-ons         = Σ (qty × unit price)
-deposit         = 50% of the total
+base           = $500 session + $200 chef service (4 hrs)  = $700, serves 10
+extra hours    = $50 each beyond 4
+extra skewers  = types beyond 7 chicken / 2 vegetable,
+                 charged at $5 × max(10, guests) per type
+add-ons        = Σ (qty × unit price)
+──────────────────────────────────────────────────────────
+to hold a date = 10% of the $700 minimum          = $70, fixed
+on menu lock   = 50% of the total − whatever's paid
+on the night   = the remaining 50%
 ```
+
+Confirmed payments are tracked individually, so reopening a menu never loses a
+customer money — it recalculates what is still owed.
 
 Minimums are enforced per item: 10 for makimono and premium skewers, 2 for
 Kinki/squid/mentaiko, 10 pax for sashimi moriwase. **Comb** and **Bafun uni** are
@@ -150,11 +164,9 @@ request, day-before check-in), so he keeps the personal touch without retyping.
 
 ## Not built yet
 
-Everything server-side: Postgres, auth, real availability, email, the private-link
-tokens, and persistence. The customer's in-progress order lives in `localStorage`;
-the chef's screens run on eight sample bookings in `store.js`, and every action
-(confirm, mark paid, block a date, change a price) mutates that array in memory —
-so a refresh resets it.
+Everything server-side: Postgres, auth, email, the private-link tokens, and real
+persistence. Everything currently lives in one `localStorage` record, so the two
+sides must be the same browser.
 
 Also not wired: nothing on the Settings screen saves, and the PayNow QR is a
 drawn placeholder rather than a real payment code.

@@ -83,7 +83,7 @@ function itemCard(m, opts = {}){
     <div class="card-body">
       <div class="card-en">${esc(m.en)}</div>
       <div class="card-cn">${esc(m.cn)}</div>
-      ${opts.noPrice ? '' : priceLine(m)}
+      ${opts.foot !== undefined ? opts.foot : (opts.noPrice ? '' : priceLine(m))}
     </div>
   </article>`;
 }
@@ -245,14 +245,18 @@ function Menu(){
 }
 
 /* ══ RESERVE ═════════════════════════════════════════ */
+/* Open on the first month that still has evenings to offer. */
 let calMonth = (() => {
-  const t = addDays(0), m = new Date(t.getFullYear(), t.getMonth(), 1);
-  let open = 0;
-  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0), un = unavailableDates();
-  for (const d = new Date(t); d <= end; d.setDate(d.getDate() + 1))
-    if (SETTINGS.serviceDays.includes(d.getDay()) && !un.has(iso(d))) open++;
-  if (open < 3) m.setMonth(m.getMonth() + 1);
-  return m;
+  const t = addDays(0);
+  for (let i = 0; i < 12; i++){
+    const m = new Date(t.getFullYear(), t.getMonth() + i, 1);
+    const last = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+    let open = 0;
+    for (const d = new Date(m); d <= last; d.setDate(d.getDate() + 1))
+      if (isBookable(iso(d))) open++;
+    if (open > 0) return m;
+  }
+  return new Date(t.getFullYear(), t.getMonth(), 1);
 })();
 
 function Reserve(){
@@ -260,16 +264,16 @@ function Reserve(){
   <section style="padding:56px 0 20px"><div class="wrap">
     <div class="rule"></div><div class="eyebrow">Step 1 of 2 · Request a date</div>
     <h1 class="display" style="font-size:clamp(2.1rem,4.5vw,3.1rem);margin:12px 0 12px">When are we grilling?</h1>
-    <p class="lede">Nothing is charged yet. Gino confirms your date personally, then sends a private link
-    where you choose your skewers.</p>
+    <p class="lede">A ${money(round2(SETTINGS.holdPct * minimumSpend()))} holding deposit takes the evening —
+    ${SETTINGS.holdPct * 100}% of the minimum spend. You choose your skewers straight afterwards.</p>
   </div></section>
   <section style="padding-bottom:80px"><div class="wrap">
     <div class="split">
       <div>
         <div id="calMount"></div>
         <div class="notice notice-info" style="margin-top:18px">
-          <span>◆</span><div>Evenings only, Tuesday to Saturday. Minimum ${SETTINGS.minPax} guests
-          or ${money(SETTINGS.sessionFee + SETTINGS.chefServiceFee)}, whichever is greater.</div>
+          <span>◆</span><div>Minimum ${SETTINGS.minPax} guests or ${money(minimumSpend())}, whichever is greater.
+          Available evenings are the ones Gino has opened — if a month looks closed, it isn't released yet.</div>
         </div>
       </div>
       <form id="resForm" class="panel">
@@ -300,8 +304,10 @@ function Reserve(){
         <div class="field"><label>Anything else</label>
           <textarea class="input" name="notes" placeholder="Allergies, occasion, special requests — Gino reads every one.">${esc(draft.notes)}</textarea></div>
         <div id="resErr"></div>
-        <button class="btn btn-primary btn-lg" style="width:100%;margin-top:8px" type="submit">Request this date</button>
-        <p class="hint" style="text-align:center;margin-top:12px">No payment now. You'll hear back from Gino directly.</p>
+        <button class="btn btn-primary btn-lg" style="width:100%;margin-top:8px" type="submit">
+          Hold this date · ${money(round2(SETTINGS.holdPct * minimumSpend()))}</button>
+        <p class="hint" style="text-align:center;margin-top:12px">The evening is yours as soon as you book.
+        You'll pay another 40% when your menu is set, and the last 50% to Gino on the night.</p>
       </form>
     </div>
   </div></section>${foot()}`;
@@ -315,15 +321,16 @@ function calendar(){
   const min = new Date(today.getFullYear(), today.getMonth(), 1);
   const cells = [];
   for (let i = 0; i < start; i++) cells.push('<div></div>');
+  const released = isReleased(monthKey(iso(new Date(y, mo, 1))));
   for (let d = 1; d <= days; d++){
     const date = new Date(y, mo, d), key = iso(date);
     let cls = 'off';
-    if (date >= today && SETTINGS.serviceDays.includes(date.getDay()))
-      cls = unavail.has(key) ? 'booked' : 'avail';
+    if (released && date >= today) cls = unavail.has(key) ? 'booked' : 'avail';
     if (draft.date === key) cls = 'on';
     cells.push(`<button type="button" class="cal-day ${cls}" data-d="${key}"
       ${cls==='off'||cls==='booked'?'disabled':''}>${d}</button>`);
   }
+  if (!released) cells.push(`<div class="cal-closed">Gino hasn’t opened this month yet.</div>`);
   return `<div class="cal">
     <div class="cal-head">
       <button type="button" id="calPrev" ${first <= min ? 'disabled' : ''}>‹</button>
@@ -342,33 +349,45 @@ function calendar(){
   </div>`;
 }
 
-/* ══ THANKS ══════════════════════════════════════════ */
+/* ══ THANKS — pay the holding deposit ════════════════ */
 function Thanks(id){
   const b = bookingById(id);
   if (!b) return NotFound('thanks/' + id);
+  const p = paymentPlan(b);
+  const held = stage(b) !== 'hold';
+
   return `${nav('#/reserve')}
-  <section class="sec"><div class="wrap narrow">
+  <section class="sec" style="padding-bottom:40px"><div class="wrap narrow">
     <div class="notice notice-ok" style="margin-bottom:26px"><span>✓</span><div>
-      <b>Request sent.</b> Gino has your details and will come back to you personally.</div></div>
+      <b>${prettyDate(b.date)} is yours.</b> The evening came off the calendar the moment you booked —
+      nobody else can take it.</div></div>
     <div class="rule"></div><div class="eyebrow">Reference ${b.id}</div>
     <h1 class="display" style="font-size:clamp(1.9rem,4vw,2.7rem);margin:12px 0 14px">
-      ${esc(b.name.split(' ')[0])}, we’ve got you down for ${shortDate(b.date)}.</h1>
+      ${esc(b.name.split(' ')[0])}, you’re booked.</h1>
     <p class="lede">${prettyDate(b.date)} at ${b.time} · ${b.pax} guests · ${esc(b.addr)}</p>
 
-    <div class="panel" style="margin-top:28px">
-      <div class="panel-t">What happens next</div>
-      <div class="line"><div><b>1 · Gino checks the date</b>
-        <div class="l-sub">Usually the same day. Nothing is charged yet.</div></div></div>
-      <div class="line"><div><b>2 · You get a private link</b>
-        <div class="l-sub">Where you choose your ${SETTINGS.includedChicken} chicken and ${SETTINGS.includedVeg} vegetable skewers, plus any add-ons.</div></div></div>
-      <div class="line"><div><b>3 · A 50% deposit holds the night</b>
-        <div class="l-sub">By PayNow. The balance is settled on the evening.</div></div></div>
+    <div class="panel" style="margin:28px 0 20px">
+      <div class="panel-t">How the money works</div>
+      <div class="sched">
+        <div class="sched-r ${held ? 'ok' : 'due'}">
+          <span>1 · Now, to hold the date</span><b>${money(p.hold)}</b>
+          <em>${held ? 'received' : 'due'}</em></div>
+        <div class="sched-r"><span>2 · When your menu is set</span><b>40%</b><em>later</em></div>
+        <div class="sched-r"><span>3 · On the night, with Gino</span><b>50%</b><em>later</em></div>
+      </div>
+      <p class="hint" style="margin-top:14px">The holding deposit is ${SETTINGS.holdPct * 100}% of the
+      ${money(minimumSpend())} minimum. Steps 2 and 3 are worked out from your final menu.</p>
     </div>
 
-    <div class="notice notice-info" style="margin-top:22px"><span>◆</span><div>
-      <b>Testing the flow?</b> In real use you'd wait for Gino's message. To carry on now,
-      open <a href="#/chef" style="color:var(--ember)">Gino's side</a> and confirm
-      <b>${esc(b.name)}</b> — he'll get the link to send you.</div></div>
+    ${held
+      ? `<div class="notice notice-ok" style="margin-bottom:22px"><span>✓</span><div>
+          <b>Deposit received.</b> Your menu is open — take your time.</div></div>
+         <a class="btn btn-primary btn-lg" href="${orderPath(b.id)}">Choose your skewers →</a>`
+      : `${payPanel(b, 'hold', p.hold, `Pay ${money(p.hold)}`,
+            'Gino confirms it landed. You can start choosing your menu right away.')}
+         <div class="notice notice-info" style="margin-top:22px"><span>◆</span><div>
+           No need to wait — <a href="${orderPath(b.id)}" style="color:var(--ember)">start choosing your skewers</a>
+           while the transfer clears.</div></div>`}
   </div></section>${foot()}`;
 }
 
@@ -377,7 +396,7 @@ function Thanks(id){
 /* Landing on the private-link screen without an id: explain, and (as a prototype
    convenience) offer the confirmed bookings that a link would exist for. */
 function OrderIndex(){
-  const open = upcoming().filter(b => b.status === 'conf' || b.status === 'menu');
+  const open = upcoming().filter(b => !b.completed);
   return `${nav('#/order')}
   <section class="sec"><div class="wrap narrow">
     <div class="rule"></div><div class="eyebrow">Private link</div>
@@ -385,13 +404,12 @@ function OrderIndex(){
     <p class="lede">Once he confirms your date he sends a link that opens your own menu.
     There's nothing to see here without one.</p>
     ${open.length ? `<div class="panel" style="margin-top:26px">
-      <div class="panel-t">Confirmed bookings you can open <span class="muted" style="font-size:.74rem;font-family:var(--sans)">prototype shortcut</span></div>
+      <div class="panel-t">Bookings you can open <span class="muted" style="font-size:.74rem;font-family:var(--sans)">prototype shortcut</span></div>
       ${open.map(b => `<a class="line" style="text-decoration:none" href="${orderPath(b.id)}">
         <div><b>${esc(b.name)}</b><div class="l-sub">${shortDate(b.date)} · ${b.pax} guests · ${b.id}</div></div>
         <div class="l-amt" style="color:var(--ember)">Open →</div></a>`).join('')}
     </div>` : `<div class="notice notice-info" style="margin-top:22px"><span>◆</span><div>
-      No confirmed bookings yet. <a href="#/reserve" style="color:var(--ember)">Request a date</a>,
-      then confirm it on <a href="#/chef" style="color:var(--ember)">Gino's side</a>.</div></div>`}
+      No bookings yet. <a href="#/reserve" style="color:var(--ember)">Book an evening</a> to get one.</div></div>`}
   </div></section>${foot()}`;
 }
 
@@ -399,58 +417,75 @@ function Order(id){
   const b = bookingById(id);
   if (!b) return NotFound('order/' + id);
 
-  if (b.status === 'req') return `${nav('#/order')}
-    <section class="sec"><div class="wrap narrow" style="text-align:center">
-      <div class="eyebrow">Reference ${b.id}</div>
-      <h1 class="display" style="margin:14px 0">Not confirmed yet.</h1>
-      <p class="lede" style="margin:0 auto 26px">Gino hasn’t confirmed ${shortDate(b.date)}. Your menu
-      opens as soon as he does.</p>
-      <a class="btn btn-ghost" href="#/chef">Open Gino’s side</a>
-    </div></section>${foot()}`;
+  const st = stage(b);
+  const locked = b.menuLocked;
+  const plan = paymentPlan(b);
+  const extraQty = extraQtyFor(b.pax);
 
-  const locked = b.status === 'paid' || b.status === 'done';
-  const grid = (cat, limit, key) => {
-    const full = b[key].length >= limit;
+  const grid = (cat, included, key) => {
+    const chosen = b[key];
     return `<div class="grid grid-6">${inCat(cat).map(m => {
-      const on = b[key].includes(m.id);
+      const i = chosen.indexOf(m.id);
+      const on = i > -1;
+      const extra = on && i >= included;
       return itemCard(m, {
-        cls: `sel-able ${on?'on':''} ${!on && full ? 'dim':''} ${locked?'dim':''}`,
+        cls: `sel-able ${on?'on':''} ${extra?'xtra':''} ${locked?'locked':''}`,
         attr: locked ? '' : `data-pick="${key}" data-id="${m.id}" role="checkbox" tabindex="0" aria-checked="${on}"`,
-        pick: true, noPrice: m.price !== 'ask'
+        pick: true, noPrice: true,
+        foot: extra
+          ? `<div class="card-price">+${money(SETTINGS.extraSkewerPrice)} × ${extraQty} = ${money(SETTINGS.extraSkewerPrice*extraQty)}</div>`
+          : on ? '<div class="card-price" style="color:var(--green)">Included</div>'
+               : `<div class="card-price" style="color:var(--text-3)">${
+                    chosen.length >= included ? `+${money(SETTINGS.extraSkewerPrice)} / skewer` : 'Included'}</div>`
       });
     }).join('')}</div>`;
   };
   const addonGrid = cat => `<div class="grid grid-4">${inCat(cat).map(m => qtyCard(m, b, locked)).join('')}</div>`;
 
+  const overC = Math.max(0, b.chicken.length - SETTINGS.includedChicken);
+  const overV = Math.max(0, b.veg.length - SETTINGS.includedVeg);
+
   return `${nav('#/order')}
   <section style="padding:48px 0 10px"><div class="wrap">
-    <div class="rule"></div><div class="eyebrow">Step 2 of 2 · ${esc(b.name.split(' ')[0])}’s menu · ${b.id}</div>
-    <h1 class="display" style="font-size:clamp(2.1rem,4.5vw,3.1rem);margin:12px 0 12px">Choose your nine.</h1>
-    <p class="lede">${SETTINGS.includedChicken} chicken and ${SETTINGS.includedVeg} vegetable skewers are included in your set.
-    Everything after that is an add-on — the total updates as you go.</p>
+    <div class="rule"></div><div class="eyebrow">${esc(b.name.split(' ')[0])}’s menu · ${b.id}</div>
+    <h1 class="display" style="font-size:clamp(2.1rem,4.5vw,3.1rem);margin:12px 0 12px">
+      ${locked ? 'Your menu is set.' : 'Choose your nine — or more.'}</h1>
+    <p class="lede">${SETTINGS.includedChicken} chicken and ${SETTINGS.includedVeg} vegetable skewers come with your set.
+    Take as many extra types as you like at ${money(SETTINGS.extraSkewerPrice)} a skewer,
+    ${extraQty} of each for your ${b.pax} guests.</p>
+
     <div class="rail" style="margin-top:28px">
-      <span class="rail-s ${b.chicken.length===7?'done':'on'}"><i>${b.chicken.length===7?'✓':'1'}</i>Chicken</span><span class="rail-line"></span>
-      <span class="rail-s ${b.veg.length===2?'done':''}"><i>${b.veg.length===2?'✓':'2'}</i>Vegetable</span><span class="rail-line"></span>
+      <span class="rail-s ${b.chicken.length>=7?'done':'on'}"><i>${b.chicken.length>=7?'✓':'1'}</i>Chicken</span><span class="rail-line"></span>
+      <span class="rail-s ${b.veg.length>=2?'done':''}"><i>${b.veg.length>=2?'✓':'2'}</i>Vegetable</span><span class="rail-line"></span>
       <span class="rail-s"><i>3</i>Add-ons</span><span class="rail-line"></span>
-      <span class="rail-s ${locked?'done':''}"><i>${locked?'✓':'4'}</i>Confirm</span>
+      <span class="rail-s ${locked?'done':''}"><i>${locked?'✓':'4'}</i>Pay 40%</span>
     </div>
-    <div class="notice notice-ok"><span>✓</span><div>
-      <b>${prettyDate(b.date)}</b> at ${b.time} · ${b.pax} guests · confirmed by Gino.
-      ${locked ? 'Your deposit is in and this menu is now locked.'
-               : `You can change your menu until ${SETTINGS.cutoffHours} hours before.`}</div></div>
+
+    ${locked
+      ? `<div class="notice notice-ok"><span>🔒</span><div><b>Locked in.</b>
+          ${st === 'set' ? 'Paid and confirmed.' : st === 'menuPaid'
+            ? 'Gino is checking for your payment.'
+            : `<a href="#/order/${b.id}/summary" style="color:var(--ember)">${money(plan.dueNow)} still to pay</a>.`}
+          To change anything, message Gino and he'll reopen it for you.
+          <a href="${waChef(b)}" target="_blank" rel="noopener" style="color:var(--ember)">Message Gino</a></div></div>`
+      : `<div class="notice notice-ok"><span>✓</span><div>
+          <b>${prettyDate(b.date)}</b> at ${b.time} · ${b.pax} guests · your date is held.
+          Change your menu freely until you submit it.</div></div>`}
   </div></section>
 
   <section class="sec" style="padding:34px 0"><div class="wrap">
     <div class="sec-head" style="margin-bottom:20px"><div class="rule"></div>
       <h2 class="display" style="margin-bottom:4px">Chicken <span class="jp" style="color:var(--text-3);font-size:.55em">鶏肉</span></h2>
-      <p class="muted" style="font-size:.9rem">Choose exactly ${SETTINGS.includedChicken}.</p></div>
+      <p class="muted" style="font-size:.9rem">${SETTINGS.includedChicken} included${
+        overC ? ` · ${overC} extra × ${money(SETTINGS.extraSkewerPrice*extraQty)}` : ''}</p></div>
     ${grid('chicken', SETTINGS.includedChicken, 'chicken')}
   </div></section>
 
   <section class="sec" style="padding:34px 0"><div class="wrap">
     <div class="sec-head" style="margin-bottom:20px"><div class="rule"></div>
       <h2 class="display" style="margin-bottom:4px">Vegetable <span class="jp" style="color:var(--text-3);font-size:.55em">野菜</span></h2>
-      <p class="muted" style="font-size:.9rem">Choose exactly ${SETTINGS.includedVeg}.</p></div>
+      <p class="muted" style="font-size:.9rem">${SETTINGS.includedVeg} included${
+        overV ? ` · ${overV} extra × ${money(SETTINGS.extraSkewerPrice*extraQty)}` : ''}</p></div>
     ${grid('vegetable', SETTINGS.includedVeg, 'veg')}
   </div></section>
 
@@ -466,6 +501,9 @@ function Order(id){
   <div class="bar"><div class="wrap bar-in" id="orderBar" data-id="${b.id}"></div></div>
   ${foot()}`;
 }
+
+const waChef = b => `https://wa.me/${SETTINGS.contact.whatsapp}?text=${encodeURIComponent(
+  `Hi Gino, this is ${b.name} (${b.id}, ${prettyDate(b.date)}). I'd like to change my menu — could you reopen it?`)}`;
 
 function qtyCard(m, b, locked){
   const q = b.addons[m.id] || 0;
@@ -493,41 +531,48 @@ function qtyCard(m, b, locked){
 function renderBar(){
   const bar = $('#orderBar'); if (!bar) return;
   const b = bookingById(bar.dataset.id); if (!b) return;
-  const q = quote({ hours: b.hours, addons: b.addons });
+  const plan = paymentPlan(b);
   const v = validate({ chicken:b.chicken, veg:b.veg, addons:b.addons, pax:b.pax });
-  const cls = (n, need) => n === need ? 'done' : n > need ? 'over' : '';
-  const shortChicken = SETTINGS.includedChicken - b.chicken.length;
-  const shortVeg     = SETTINGS.includedVeg - b.veg.length;
-  const label = v.ok ? 'Review &amp; confirm →'
-    : [shortChicken > 0 ? `${shortChicken} chicken` : '', shortVeg > 0 ? `${shortVeg} vegetable` : '']
-        .filter(Boolean).join(', ') + ' to go';
+  const overC = b.chicken.length - SETTINGS.includedChicken;
+  const overV = b.veg.length - SETTINGS.includedVeg;
+  const cls = n => n === 0 ? 'done' : n > 0 ? 'xtra' : '';
+  const need = [ overC < 0 ? `${-overC} chicken` : '', overV < 0 ? `${-overV} vegetable` : '' ]
+                 .filter(Boolean).join(', ');
+
   bar.innerHTML = `
     <div class="bar-counts">
-      <span class="bar-c ${cls(b.chicken.length,7)}"><b>${b.chicken.length}/${SETTINGS.includedChicken}</b> chicken</span>
-      <span class="bar-c ${cls(b.veg.length,2)}"><b>${b.veg.length}/${SETTINGS.includedVeg}</b> vegetable</span>
+      <span class="bar-c ${cls(overC)}"><b>${b.chicken.length}</b> chicken${overC > 0 ? ` <i>+${overC}</i>` : ''}</span>
+      <span class="bar-c ${cls(overV)}"><b>${b.veg.length}</b> vegetable${overV > 0 ? ` <i>+${overV}</i>` : ''}</span>
       <span class="bar-c"><b>${Object.values(b.addons).filter(Boolean).length}</b> add-ons</span>
     </div>
-    <div class="bar-total"><small>Total · deposit ${money(q.deposit)}</small><b>${money(q.subtotal)}</b></div>
-    <button class="btn btn-primary" id="toSummary" ${v.ok?'':'disabled'}>${label}</button>`;
-  $('#toSummary')?.addEventListener('click', () => { submitMenu(b.id); go(`#/order/${b.id}/summary`); });
+    <div class="bar-total"><small>Total · ${money(plan.dueNow)} due on submit</small><b>${money(plan.subtotal)}</b></div>
+    <button class="btn btn-primary" id="toSummary" ${v.ok && !b.menuLocked ? '' : 'disabled'}>
+      ${b.menuLocked ? 'Menu locked' : v.ok ? 'Submit &amp; pay →' : `${need} to go`}</button>`;
+
+  $('#toSummary')?.addEventListener('click', () => {
+    if (!confirm('Submit this menu?\n\nIt locks once submitted — Gino can reopen it for you if you need to change something.')) return;
+    submitMenu(b.id);
+    go(`#/order/${b.id}/summary`);
+  });
 }
 
 /* ══ SUMMARY ═════════════════════════════════════════ */
 function Summary(id){
   const b = bookingById(id);
   if (!b) return NotFound(`order/${id}/summary`);
-  const q = quote({ hours: b.hours, addons: b.addons });
-  const settled = b.status === 'paid' || b.status === 'done';
-  const chips = ids => ids.map(x => { const m = byId(x); return `
-    <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--raise);border-radius:999px">
-      <img src="${imgOf(m)}" alt="" style="width:26px;height:26px;object-fit:contain">
-      <span style="font-size:.8rem">${esc(m.en)}</span></div>`; }).join('');
+  const p  = paymentPlan(b);
+  const st = stage(b);
+  const chips = (ids, included) => ids.map((x, i) => { const m = byId(x); return `
+    <div class="mchip ${i >= included ? 'x' : ''}">
+      <img src="${imgOf(m)}" alt=""><span>${esc(m.en)}</span>${i >= included ? '<em>extra</em>' : ''}</div>`; }).join('');
 
   return `${nav('#/order')}
   <section style="padding:48px 0 10px"><div class="wrap narrow">
     <div class="rule"></div><div class="eyebrow">${b.id} · ${esc(b.name)}</div>
     <h1 class="display" style="font-size:clamp(2rem,4vw,2.8rem);margin:12px 0 10px">Your night, in full.</h1>
-    <p class="lede">${settled ? 'Deposit received — you’re all set.' : 'Check it over, then secure the date with a 50% deposit.'}</p>
+    <p class="lede">${st === 'set' ? 'Paid to 50% and locked in — nothing left to do until the night.'
+      : st === 'menuPaid' ? 'Gino is checking for your payment.'
+      : `Settle ${money(p.dueNow)} now and the night is confirmed.`}</p>
   </div></section>
   <section style="padding-bottom:80px"><div class="wrap narrow">
     <div class="panel" style="margin-bottom:20px">
@@ -540,59 +585,75 @@ function Summary(id){
     </div>
 
     <div class="panel" style="margin-bottom:20px">
-      <div class="panel-t">Your ${SETTINGS.includedChicken + SETTINGS.includedVeg} set skewers
-        ${settled ? '' : `<a href="${orderPath(b.id)}" style="font-size:.78rem;color:var(--ember);font-family:var(--sans)">Change</a>`}</div>
+      <div class="panel-t">Your skewers
+        ${b.menuLocked ? '<span class="muted" style="font-size:.74rem;font-family:var(--sans)">🔒 locked</span>'
+                       : `<a href="${orderPath(b.id)}" style="font-size:.78rem;color:var(--ember);font-family:var(--sans)">Change</a>`}</div>
       <div style="font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);margin-bottom:9px">Chicken</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">${chips(b.chicken)}</div>
+      <div class="mchips" style="margin-bottom:18px">${chips(b.chicken, SETTINGS.includedChicken)}</div>
       <div style="font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);margin-bottom:9px">Vegetable</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">${chips(b.veg)}</div>
+      <div class="mchips">${chips(b.veg, SETTINGS.includedVeg)}</div>
+      ${b.menuLocked ? `<p class="hint" style="margin-top:14px">Need a change?
+        <a href="${waChef(b)}" target="_blank" rel="noopener" style="color:var(--ember)">Message Gino</a> and he'll reopen it.</p>` : ''}
     </div>
 
     <div class="panel" style="margin-bottom:20px">
       <div class="panel-t">The bill</div>
-      ${q.lines.map(l => `<div class="line"><div><b>${esc(l.label)}</b><div class="l-sub">${esc(l.sub)}</div></div>
+      ${p.lines.map(l => `<div class="line"><div><b>${esc(l.label)}</b><div class="l-sub">${esc(l.sub)}</div></div>
         <div class="l-amt">${money(l.amount)}</div></div>`).join('')}
-      <div class="total"><b>Total</b><span class="t-amt">${money(q.subtotal)}</span></div>
-      ${q.askItems.length ? `<div class="notice notice-info" style="margin-top:14px"><span>◆</span><div>
-        <b>${q.askItems.map(m => esc(m.en)).join(', ')}</b> — priced on request. Gino will confirm before the night
-        and it isn't in the total above.</div></div>` : ''}
-      <div class="deposit-box">
-        <div style="display:flex;justify-content:space-between;align-items:baseline">
-          <div><b style="font-size:.9rem">Deposit ${settled ? 'received' : 'due now'}</b>
-            <div class="hint" style="margin:2px 0 0">50% · balance ${money(q.balance)} on the night</div></div>
-          <div class="d-amt" ${settled?'style="color:var(--green)"':''}>${money(q.deposit)}</div>
-        </div>
+      <div class="total"><b>Total</b><span class="t-amt">${money(p.subtotal)}</span></div>
+      ${p.askItems.length ? `<div class="notice notice-info" style="margin-top:14px"><span>◆</span><div>
+        <b>${p.askItems.map(m => esc(m.en)).join(', ')}</b> — priced on request. Gino confirms these separately
+        and they aren't in the total above.</div></div>` : ''}
+
+      <div class="sched">
+        <div class="sched-r ${p.paid >= p.hold ? 'ok' : 'wait'}">
+          <span>1 · Holding deposit</span><b>${money(p.hold)}</b>
+          <em>${p.paid >= p.hold ? 'received' : 'awaiting Gino'}</em></div>
+        <div class="sched-r ${st === 'set' ? 'ok' : p.dueNow ? 'due' : 'wait'}">
+          <span>2 · On confirming your menu</span><b>${money(Math.max(0, p.byMenu - p.hold))}</b>
+          <em>${st === 'set' ? 'received' : st === 'menuPaid' ? 'awaiting Gino' : 'due now'}</em></div>
+        <div class="sched-r">
+          <span>3 · On the night, with Gino</span><b>${money(p.balance)}</b><em>later</em></div>
       </div>
     </div>
 
-    ${settled
-      ? `<div class="notice notice-ok"><span>✓</span><div><b>Confirmed.</b> Gino has your deposit and your
-          menu is locked in. See you on ${prettyDate(b.date)}.</div></div>`
-      : b.depositClaimed
+    ${st === 'set'
+      ? `<div class="notice notice-ok"><span>✓</span><div><b>All settled to 50%.</b> Gino has ${money(p.paid)}.
+          The remaining ${money(p.balance)} is paid on the night. See you on ${prettyDate(b.date)}.</div></div>`
+      : st === 'menuPaid'
         ? `<div class="notice notice-info"><span>◆</span><div><b>Thanks — Gino is checking for your transfer.</b>
-            He'll confirm shortly. Reference <b>${b.id}</b>.</div></div>
+            Reference <b>${b.id}</b>. He'll confirm shortly.</div></div>
            <div class="notice notice-info" style="margin-top:14px"><span>◆</span><div><b>Testing the flow?</b>
-            Open <a href="#/chef" style="color:var(--ember)">Gino's side</a> and mark the deposit received.</div></div>`
-        : `<div class="panel">
-      <div class="panel-t">Pay the deposit · PayNow</div>
-      <div class="pay-grid">
-        ${fakeQR()}
-        <div style="flex:1;min-width:230px">
-          <div class="kv"><span>UEN</span><b><span class="ph" title="Placeholder">${SETTINGS.paynow.uen}</span></b></div>
-          <div class="kv"><span>Account</span><b><span class="ph" title="Placeholder">${SETTINGS.paynow.name}</span></b></div>
-          <div class="kv"><span>Amount</span><b style="color:var(--ember)">${money(q.deposit)}</b></div>
-          <div class="kv"><span>Reference</span><b>${b.id}</b></div>
-        </div>
-      </div>
-      <div class="drop" id="drop" style="margin-top:20px">
-        <div class="ic">⇪</div>
-        <p style="font-size:.88rem;margin-top:8px"><b>Upload your payment screenshot</b></p>
-        <p class="hint">Gino checks it against the reference and confirms.</p>
-      </div>
-      <button class="btn btn-primary btn-lg" style="width:100%;margin-top:18px" id="markPaid" data-id="${b.id}">I've paid the deposit</button>
-      <p class="hint" style="text-align:center;margin-top:10px">Prototype — no money moves. This tells Gino to look for it.</p>
-    </div>`}
+            Open <a href="#/chef" style="color:var(--ember)">Gino's side</a> and confirm the payment.</div></div>`
+        : p.dueNow > 0
+          ? payPanel(b, 'menu', p.dueNow, `Pay ${money(p.dueNow)}`,
+              `Brings you to 50% of ${money(p.subtotal)}. The rest is settled on the night.`)
+          : `<div class="notice notice-ok"><span>✓</span><div>Nothing further due right now.</div></div>`}
   </div></section>${foot()}`;
+}
+
+/** The PayNow panel, used for both the holding deposit and the 40% top-up. */
+function payPanel(b, kind, amount, heading, note){
+  return `<div class="panel">
+    <div class="panel-t">${heading} · PayNow</div>
+    <div class="pay-grid">
+      ${fakeQR()}
+      <div style="flex:1;min-width:230px">
+        <div class="kv"><span>UEN</span><b><span class="ph" title="Placeholder">${SETTINGS.paynow.uen}</span></b></div>
+        <div class="kv"><span>Account</span><b><span class="ph" title="Placeholder">${SETTINGS.paynow.name}</span></b></div>
+        <div class="kv"><span>Amount</span><b style="color:var(--ember)">${money(amount)}</b></div>
+        <div class="kv"><span>Reference</span><b>${b.id}</b></div>
+      </div>
+    </div>
+    <div class="drop" id="drop" style="margin-top:20px">
+      <div class="ic">⇪</div>
+      <p style="font-size:.88rem;margin-top:8px"><b>Upload your payment screenshot</b></p>
+      <p class="hint">Gino checks it against the reference and confirms.</p>
+    </div>
+    <button class="btn btn-primary btn-lg" style="width:100%;margin-top:18px"
+      id="markPaid" data-id="${b.id}" data-kind="${kind}" data-amount="${amount}">I've paid ${money(amount)}</button>
+    <p class="hint" style="text-align:center;margin-top:10px">${note}</p>
+  </div>`;
 }
 
 /* Decorative stand-in for the real PayNow QR (generated server-side in the real build). */
@@ -623,13 +684,13 @@ const ROUTES = [
   [/^order\/([\w-]+)$/,         id => Order(id)],
   [/^order\/([\w-]+)\/summary$/, id => Summary(id)],
   [/^chef$/,                    () => ChefBookings()],
-  [/^chef\/calendar$/,          () => ChefCalendar()],
   [/^chef\/menu$/,              () => ChefMenu()],
   [/^chef\/settings$/,          () => ChefSettings()]
 ];
 const isChef = path => path.startsWith('chef');
 function go(h){ if (location.hash === h) render(); else location.hash = h; }
 
+let lastPath = null;
 function pathOf(){ return (location.hash || '#/').replace(/^#\/?/, '').split('?')[0]; }
 
 function render(){
@@ -648,10 +709,18 @@ function render(){
   }
   if (html === null) html = NotFound(path);
 
+  /* Only jump to the top when the screen actually changes. Re-rendering after a
+     selection must leave the reader where they were. */
+  const samePage = path === lastPath;
+  const y = samePage ? window.scrollY : 0;
+  lastPath = path;
+
   $('#app').innerHTML = demoBar(path) + html;
-  window.scrollTo(0,0);
   wire(path);
   observe();
+  /* Explicitly instant: html{scroll-behavior:smooth} would otherwise animate a
+     route change, and animate the restore after a selection. */
+  window.scrollTo({ top: samePage ? y : 0, behavior: 'instant' });
 }
 
 function NotFound(path){
@@ -702,7 +771,7 @@ function wire(path){
 
       const errs = [];
       if (!draft.date) errs.push('Pick a date from the calendar.');
-      else if (unavailableDates().has(draft.date)) errs.push('That evening was just taken — please pick another.');
+      else if (!isBookable(draft.date)) errs.push('That evening isn’t available — please pick another.');
       if (draft.pax < SETTINGS.minPax) errs.push(`Minimum ${SETTINGS.minPax} guests.`);
       if (!draft.name.trim())  errs.push('We need a name.');
       if (!draft.phone.trim()) errs.push('We need a WhatsApp number to reach you.');
@@ -710,6 +779,11 @@ function wire(path){
       if (errs.length){
         $('#resErr').innerHTML = `<div class="notice notice-warn" style="margin-bottom:14px"><span>!</span>
           <div><b>Almost —</b><ul>${errs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>`;
+        return;
+      }
+      if (!isBookable(draft.date)){
+        $('#resErr').innerHTML = `<div class="notice notice-warn" style="margin-bottom:14px"><span>!</span>
+          <div>That evening was taken while you were filling this in. Please choose another.</div></div>`;
         return;
       }
       const b = createBooking({ ...draft });
@@ -724,13 +798,11 @@ function wire(path){
 
     $$('[data-pick]').forEach(el => {
       const act = () => {
-        const b = bookingById(id); if (!b) return;
+        const b = bookingById(id); if (!b || b.menuLocked) return;
         const { pick, id: itemId } = el.dataset;
-        const limit = pick === 'chicken' ? SETTINGS.includedChicken : SETTINGS.includedVeg;
+        /* No cap: anything past the included count is billed as an extra type. */
         const arr = b[pick].slice(), i = arr.indexOf(itemId);
-        if (i > -1) arr.splice(i, 1);
-        else if (arr.length < limit) arr.push(itemId);
-        else return;
+        i > -1 ? arr.splice(i, 1) : arr.push(itemId);
         saveMenu(id, { [pick]: arr });
         render();
       };
@@ -765,7 +837,7 @@ function wire(path){
     renderBar();
   }
 
-  if (/^order\/[\w-]+\/summary$/.test(path)){
+  if (/^thanks\/[\w-]+$/.test(path) || /^order\/[\w-]+\/summary$/.test(path)){
     $('#drop')?.addEventListener('click', () => {
       const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
       i.onchange = () => { if (i.files[0]) $('#drop').innerHTML =
@@ -773,7 +845,10 @@ function wire(path){
          <b>${esc(i.files[0].name)}</b></p><p class="hint">Ready to send with your booking.</p>`; };
       i.click();
     });
-    $('#markPaid')?.addEventListener('click', e => { claimDeposit(e.target.dataset.id); render(); });
+    $('#markPaid')?.addEventListener('click', e => {
+      const { id, kind, amount } = e.target.dataset;
+      claimPayment(id, kind, +amount); render();
+    });
   }
 
   if (isChef(path)) wireChef(path);
@@ -784,7 +859,12 @@ let io;
 function observe(){
   io?.disconnect();
   io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { threshold:.08 });
-  $$('.rv').forEach(el => io.observe(el));
+  $$('.rv').forEach(el => {
+    // Already on screen at render time? Show it now rather than waiting for a scroll.
+    const r = el.getBoundingClientRect();
+    if (r.top < innerHeight && r.bottom > 0) el.classList.add('in');
+    io.observe(el);
+  });
 }
 
 window.addEventListener('hashchange', render);

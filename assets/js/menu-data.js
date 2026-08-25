@@ -9,11 +9,15 @@ const SETTINGS = {
   chefServiceHours: 4,
   extraHourFee: 50,
   minPax: 10,
-  includedChicken: 7,
+  includedChicken: 7,       // included in the set; more are billed as add-ons
   includedVeg: 2,
-  depositPct: 0.5,
+  extraSkewerPrice: 5,     // PLACEHOLDER — per skewer, for types beyond the included set
+  extraSkewerMinQty: 10,
+  holdPct: 0.10,           // of the minimum spend, paid to take a date
+  byMenuPct: 0.50,         // cumulative share due once the menu is confirmed
   cutoffHours: 72,
-  serviceDays: [2, 3, 4, 5, 6],   // Tue–Sat
+  /* No fixed service days. Gino releases a month, then blocks individual
+     evenings inside it — see releasedMonths / blocked in store.js. */
   // ---- PLACEHOLDERS — replace with the chef's real details ----
   paynow: { uen: 'T00XXXXXXX', name: 'BINCOTAN YAKITORI (PLACEHOLDER)' },
   contact: {

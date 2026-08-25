@@ -1,0 +1,132 @@
+<!doctype html><meta charset="utf-8"><title>e2e</title>
+<style>body{margin:0;background:#111;color:#eee;font:13px/1.55 monospace}
+.l{padding:3px 12px;border-bottom:1px solid #262626}.ok{color:#6ee787}.bad{color:#ff7b72;font-weight:700}
+iframe{position:absolute;left:-9999px;width:1200px;height:900px}</style>
+<div id="o"></div>
+<script>
+const o=document.getElementById('o');let fails=0,n=0;
+const log=(ok,m)=>{n++;o.insertAdjacentHTML('beforeend',`<div class="l ${ok?'ok':'bad'}">${ok?'✓':'✗'} ${m}</div>`);if(!ok)fails++;};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const f=document.createElement('iframe');f.src='index.html#/reset';document.body.appendChild(f);
+const W=()=>f.contentWindow,D=()=>f.contentDocument;
+const nav=async h=>{W().location.hash=h;await wait(340);};
+const q=s=>D().querySelector(s),qa=s=>[...D().querySelectorAll(s)];
+const txt=()=>D().body.innerText;
+const store=()=>JSON.parse(W().localStorage.getItem('bincotan.store.v2')||'{"bookings":[]}');
+// render() replaces #app, so any cached node is detached after a click.
+// Always re-query immediately before clicking.
+const selectN=async(key,count)=>{
+  for(let k=0;k<count;k++){
+    const el=qa(`[data-pick=${key}]`).find(e=>!e.classList.contains('on'));
+    if(!el) break;
+    el.click(); await wait(130);
+  }
+};
+const rec=id=>store().bookings.find(b=>b.id===id);
+
+f.onload=async()=>{try{
+  await wait(600); await nav('#/reset'); await wait(300);
+
+  // ── 1. no jump to top when selecting ──
+  await nav('#/chef');
+  const anyOpen = qa('[data-open]')[0]; anyOpen && anyOpen.click(); await wait(300);
+  await nav('#/reserve');
+  qa('.cal-day.avail')[0].click(); await wait(200);
+  const fm=q('#resForm');
+  fm.querySelector('[name=name]').value='Yi Chun';
+  fm.querySelector('[name=phone]').value='+65 9111 2222';
+  fm.querySelector('[name=addr]').value='12 Test Road';
+  fm.querySelector('[name=pax]').value='12'; fm.querySelector('[name=hours]').value='5';
+  fm.dispatchEvent(new Event('submit',{cancelable:true,bubbles:true})); await wait(450);
+  const id=W().location.hash.split('/').pop();
+  log(/^BY-\d{4}$/.test(id),'booking created ('+id+')');
+  log(/is yours/.test(txt()),'date is taken immediately, no approval needed');
+  log(rec(id).payments[0].amount===70,'holding deposit is $70 (10% of $700)');
+  log(rec(id).payments[0].confirmed===false,'deposit awaits Gino');
+
+  // menu opens straight away
+  await nav('#/order/'+id);
+  log(/Choose your nine/.test(txt()),'menu is open without waiting for Gino');
+
+  // ── 1. scroll position must survive a selection ──
+  const se = () => D().scrollingElement || D().documentElement;
+  const de = D().documentElement, bd = D().body;
+  de.style.scrollBehavior = 'auto';   // smooth scrolling never advances under virtual time
+  se().scrollTop = 1200; await wait(300);
+  const before = se().scrollTop;
+  log(before > 200, `page really did scroll first (scrollTop ${before})`);
+  qa('[data-pick=chicken]')[0].click(); await wait(320);
+  const after = se().scrollTop;
+  log(Math.abs(after-before) < 60, `page stays put when selecting (was ${before}, now ${after})`);
+
+  // ── 2. more than 7 chicken, priced as extras ──
+  await selectN('chicken', 7);   // 1 already picked above -> 8 total
+  await selectN('veg', 3);
+  await wait(250);
+  log(rec(id).chicken.length===8,'an 8th chicken type can be selected');
+  log(rec(id).veg.length===3,'a 3rd vegetable can be selected');
+  const bar=q('#orderBar').innerText;
+  // 700 base + 50 extra hour + (1 extra chicken + 1 extra veg) x 12 x $5 = $870
+  log(/\$870/.test(bar),'extras billed at 12 x $5 each — total $870  ['+bar.replace(/\s+/g,' ').slice(0,90)+']');
+  log(qa('.card.xtra').length===2,'the two extra types are visibly marked');
+
+  // ── 4. submit locks the menu ──
+  W().confirm=()=>true;
+  q('#toSummary').click(); await wait(450);
+  log(rec(id).menuLocked===true,'submitting locks the menu');
+  log(/Your night, in full/.test(txt()),'lands on the summary');
+
+  await nav('#/order/'+id);
+  log(/Locked in/.test(txt()),'builder shows the menu as locked');
+  log(qa('[data-pick]').length===0,'locked cards are no longer selectable');
+
+  // ── 6. the 40% top-up ──
+  await nav('#/order/'+id+'/summary');
+  const plan = /Pay \$(\d+(?:\.\d+)?)/.exec(txt());
+  log(!!plan,'a payment is requested: $'+(plan&&plan[1]));
+  log(plan && Math.abs(parseFloat(plan[1].replace(/,/g,'')) - (870*0.5 - 70)) < 0.01,
+      'it is 50% of the bill minus the $70 already held = $365');
+  q('#markPaid').click(); await wait(350);
+  log(/checking for your transfer/i.test(txt()),'payment claim registered');
+
+  // ── 5. Gino confirms both payments ──
+  await nav('#/chef');
+  const row=qa('[data-bk]').find(e=>e.innerText.includes('Yi Chun'));
+  log(!!row,'booking is in Gino\'s inbox'); row.click(); await wait(320);
+  const payBtns=qa('[data-pay]');
+  log(payBtns.length>0,'Gino can confirm the payment');
+  payBtns[0].click(); await wait(350);
+  const r2=rec(id);
+  const conf=r2.payments.filter(p=>p.confirmed).length;
+  log(conf>=1,'a payment is now confirmed ('+conf+' of '+r2.payments.length+')');
+
+  // ── 4. Gino reopens the menu ──
+  const row3=qa('[data-bk]').find(e=>e.innerText.includes('Yi Chun'));
+  if(row3){ row3.click(); await wait(300); }
+  let unlock=qa('[data-unlock]')[0];
+  if(!unlock){ // may be under a different filter
+    qa('[data-filter=upcoming]')[0]?.click(); await wait(300);
+    qa('[data-bk]').find(e=>e.innerText.includes('Yi Chun'))?.click(); await wait(300);
+    unlock=qa('[data-unlock]')[0];
+  }
+  log(!!unlock,'Gino has a reopen control');
+  unlock.click(); await wait(350);
+  log(rec(id).menuLocked===false,'reopening unlocks the menu');
+  log(rec(id).payments.some(p=>p.confirmed),'money already confirmed stays credited');
+
+  await nav('#/order/'+id);
+  log(qa('[data-pick]').length>0,'customer can edit again after Gino reopens');
+
+  // ── 5. month release ──
+  await nav('#/chef');
+  const mb=qa('[data-month]')[0];
+  log(!!mb,'month release control is on the bookings page');
+  const m0=store().releasedMonths.length;
+  mb.click(); await wait(320);
+  log(store().releasedMonths.length!==m0,'toggling changes which months are open');
+  log(!D().querySelector('a[href="#/chef/calendar"]'),'the separate calendar tab is gone');
+
+  o.insertAdjacentHTML('beforeend',`<div class="l ${fails?'bad':'ok'}" style="font-size:16px;padding:12px">
+    ${fails?fails+' FAILED of '+n:'ALL '+n+' PASSED'}</div>`);
+}catch(e){log(false,'HARNESS THREW: '+(e&&e.message)+' @ '+((e&&e.stack||'').split('\n')[1]||''));}};
+</script>

@@ -555,3 +555,46 @@ button.ccell{cursor:pointer}
 .demobar-note{font-size:.7rem;color:var(--text-3);margin-left:auto}
 @media(max-width:640px){.demobar{padding:6px 16px}.demobar-note{display:none}}
 @media print{.demobar{display:none!important}}
+
+/* extra skewer types, beyond the included set */
+.card.xtra{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.card.xtra .pick{background:var(--gold);border-color:var(--gold);color:#2A1D08}
+.card.xtra .card-img{background:radial-gradient(circle at 50% 62%,rgba(217,164,65,.26),transparent 70%)}
+.card.locked{cursor:default}
+.card.locked:hover{transform:none;border-color:var(--line-soft)}
+.bar-c.xtra b{color:var(--gold)}
+.bar-c i{font-style:normal;color:var(--gold);font-weight:700}
+
+/* the three-step payment schedule */
+.sched{margin-top:14px;border:1px solid var(--line-soft);border-radius:10px;overflow:hidden}
+.sched-r{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:baseline;
+  padding:11px 14px;background:var(--raise);border-bottom:1px solid var(--line-soft);font-size:.86rem}
+.sched-r:last-child{border-bottom:none}
+.sched-r b{font-variant-numeric:tabular-nums;font-weight:600}
+.sched-r em{font-style:normal;font-size:.66rem;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--text-3);min-width:88px;text-align:right}
+.sched-r.ok b,.sched-r.ok em{color:var(--green)}
+.sched-r.due b,.sched-r.due em{color:var(--ember-2)}
+.sched-r.wait em{color:var(--gold)}
+@media(max-width:520px){.sched-r{grid-template-columns:minmax(0,1fr) auto}.sched-r em{grid-column:2;text-align:right}}
+
+.mchip.x{border:1px solid var(--gold)}
+.mchip em{font-style:normal;font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold)}
+.cal-closed{grid-column:1/-1;text-align:center;font-size:.8rem;color:var(--text-3);padding:26px 10px}
+
+/* calendar on the bookings screen */
+.cal-block{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:20px;margin-bottom:26px}
+.cal-block-head{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;
+  flex-wrap:wrap;margin-bottom:16px}
+.ccal{background:transparent;border:0;padding:0}
+.ccal.closed .ccal-grid{opacity:.5}
+.mclosed{font-family:var(--sans);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--gold);margin-left:9px;vertical-align:middle}
+
+/* the calendar shares the bookings screen, so keep it compact */
+.cal-block .ccell{min-height:54px;padding:5px 7px}
+.cal-block .cnum{font-size:.72rem}
+.cal-block .cname{font-size:.7rem}
+.cal-block .cpax{font-size:.6rem}
+@media(max-width:720px){.cal-block .ccell{min-height:44px}.cal-block .cpax{display:none}}
