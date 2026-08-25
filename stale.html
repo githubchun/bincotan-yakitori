@@ -11,12 +11,12 @@ const head=m=>o.insertAdjacentHTML('beforeend',`<div class="h">${m}</div>`);
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 
 // Exactly what a returning visitor still has: the pre-refactor shape.
-const OLD_V2 = { seq:433, seededOn:'2026-08-25', blocked:['2026-09-08'],
+const OLD_SHAPE = { seq:433, seededOn:'2026-08-25', blocked:['2026-09-08'],
   bookings:[{ id:'BY-0421', name:'Rachel Tan', phone:'+65 8234 5678', date:'2026-09-03',
     time:'19:00', pax:12, hours:4, status:'menu', addr:'42 Jalan Kayu', depositClaimed:false,
     notes:'', chicken:['liver'], veg:['asparagus'], addons:{} }] };
 // A v3-keyed record that is corrupt in a different way.
-const BAD_V3 = { seq:1, blocked:[], bookings:[{ id:'X', date:'2026-01-01' }] };
+const BAD_RECORD = { seq:1, blocked:[], bookings:[{ id:'X', date:'2026-01-01' }] };
 
 async function load(label, seed){
   head(label);
@@ -34,18 +34,18 @@ async function load(label, seed){
 
 (async()=>{
   await load('1 · stale pre-refactor store under the OLD key', ()=>{
-    localStorage.setItem('bincotan.store.v2', JSON.stringify(OLD_V2));
-    localStorage.removeItem('bincotan.store.v3');
+    localStorage.setItem('bincotan.store.v3', JSON.stringify(OLD_SHAPE));
+    localStorage.removeItem('bincotan.store.v4');
   });
   await load('2 · corrupt record under the CURRENT key', ()=>{
-    localStorage.setItem('bincotan.store.v3', JSON.stringify(BAD_V3));
+    localStorage.setItem('bincotan.store.v4', JSON.stringify(BAD_RECORD));
   });
   await load('3 · outright garbage under the current key', ()=>{
-    localStorage.setItem('bincotan.store.v3', 'not json at all');
+    localStorage.setItem('bincotan.store.v4', 'not json at all');
   });
   await load('4 · clean first visit', ()=>{
-    localStorage.removeItem('bincotan.store.v2');
     localStorage.removeItem('bincotan.store.v3');
+    localStorage.removeItem('bincotan.store.v4');
   });
   o.insertAdjacentHTML('beforeend',`<div class="l ${fails?'bad':'ok'}" style="font-size:16px;padding:12px">
     ${fails?fails+' FAILED of '+n:'ALL '+n+' PASSED'}</div>`);

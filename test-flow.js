@@ -95,14 +95,17 @@ t('store round-trips through localStorage',
 // ── a store from an older shape must be refused, not loaded ──
 t('rejects a pre-refactor record', isUsableStore({ seq:1, blocked:[], bookings:[
   { id:'X', date:'2026-01-01', status:'menu', chicken:[], veg:[], addons:{} }] }), false);
+const MENU_SLICE = { edits:{}, custom:[], retired:[], deleted:[] };
 t('rejects a booking with no payment records', isUsableStore({ seq:1, blocked:[], releasedMonths:[], log:[],
-  bookings:[{ id:'X', date:'2026-01-01', chicken:[], veg:[], addons:{} }] }), false);
-t('rejects a missing releasedMonths', isUsableStore({ seq:1, blocked:[], log:[], bookings:[] }), false);
+  menu:MENU_SLICE, bookings:[{ id:'X', date:'2026-01-01', chicken:[], veg:[], addons:{} }] }), false);
+t('rejects a missing releasedMonths', isUsableStore({ seq:1, blocked:[], log:[], menu:MENU_SLICE, bookings:[] }), false);
 t('accepts what seedStore produces', isUsableStore(seedStore()), true);
 t('accepts an empty but well-formed store',
-  isUsableStore({ seq:0, blocked:[], releasedMonths:[], log:[], bookings:[] }), true);
+  isUsableStore({ seq:0, blocked:[], releasedMonths:[], log:[], menu:MENU_SLICE, bookings:[] }), true);
 t('rejects a store with no record log',
-  isUsableStore({ seq:0, blocked:[], releasedMonths:[], bookings:[] }), false);
+  isUsableStore({ seq:0, blocked:[], releasedMonths:[], menu:MENU_SLICE, bookings:[] }), false);
+t('rejects a store predating the menu manager',
+  isUsableStore({ seq:0, blocked:[], releasedMonths:[], log:[], bookings:[] }), false);
 
 // ── invariants ──
 resetStore();
@@ -164,6 +167,98 @@ t('a cancelled booking is gone from the list', bookingById(nb.id), undefined);
 t('but its history survives', logFor(nb.id).length, histBefore + 1);
 t('and the cancellation itself is recorded', kinds().at(-1), 'booking.cancelled');
 t('the chain survives a cancellation', chainState().ok, true);
+
+// ── the menu manager ────────────────────────────────────
+// Gino edits the menu; the shipped MENU array is never what gets edited.
+resetStore();
+
+t('a price edit survives being written and read back',
+  (setItemPrice('wagyu', 28), JSON.parse(localStorage.getItem(STORE_KEY)).menu.edits.wagyu.price), 28);
+t('and the live item shows it', byId('wagyu').price, 28);
+t('a price edit is recorded', kinds().at(-1), 'price.changed');
+t('an item in the set has no price to change', setItemPrice('liver', 4), null);
+t('nor does one quoted on request', setItemPrice('uni', 90), null);
+t('re-entering the same price records nothing', setItemPrice('wagyu', 28), null);
+
+toggleItem('kinki');
+t('switching an item off hides it from customers', inCat('premium').some(m => m.id === 'kinki'), false);
+t('but Gino still sees it', inCatAll('premium').some(m => m.id === 'kinki'), true);
+t('the toggle is recorded', kinds().at(-1), 'item.toggled');
+toggleItem('kinki');
+t('and switching it back on restores it', inCat('premium').some(m => m.id === 'kinki'), true);
+
+// adding
+const vegBefore = inCatAll('vegetable').length;
+const okra = addMenuItem({ cat:'vegetable', en:'Okra', cn:'秋葵', price:null });
+t('a new item gets a readable id', okra.id, 'okra');
+t('it lands in its category', inCatAll('vegetable').length, vegBefore + 1);
+t('customers see it immediately', inCat('vegetable').some(m => m.id === 'okra'), true);
+t('it has no photo of its own', okra.noImg, true);
+t('and it falls back to the drawn placeholder', imgOf(okra).startsWith('data:image/svg+xml'), true);
+t('adding is recorded', kinds().at(-1), 'item.added');
+
+const dup = addMenuItem({ cat:'vegetable', en:'Okra', cn:'秋葵', price:null });
+t('a duplicate name never reuses an id', dup.id, 'okra-2');
+
+const gyoza = addMenuItem({ cat:'premium', en:'Grilled Gyoza', cn:'烤饺子', price:9, unit:'pc', min:6 });
+t('a priced addition quotes at its price',
+  quote({ pax:10, hours:4, chicken:[], veg:[], addons:{ [gyoza.id]:6 } }).subtotal, 700 + 54);
+t('and enforces its own minimum',
+  validate({ pax:10, chicken:SET7, veg:['asparagus','shiitake'], addons:{ [gyoza.id]:5 } }).ok, false);
+
+// removing something nobody has ordered
+t('an unused item is in use nowhere', itemInUse(gyoza.id).length, 0);
+t('so removing it removes it', removeMenuItem(gyoza.id).action, 'removed');
+t('it is gone from the chef list too', inCatAll('premium').some(m => m.id === gyoza.id), false);
+t('and gone from byId', byId(gyoza.id), undefined);
+t('removal is recorded', kinds().at(-1), 'item.removed');
+t('a shipped item can be deleted the same way', removeMenuItem('squid').action, 'removed');
+t('and stays deleted across a reload',
+  JSON.parse(localStorage.getItem(STORE_KEY)).menu.deleted.includes('squid'), true);
+
+// removing something a booking depends on — the case that must not reprice
+const daniel = bookings().find(b => b.addons['king-prawn']);
+const wasTotal = quote(daniel).subtotal;
+const wasPrep  = prepSheet(daniel).length;
+t('the item is in use', itemInUse('king-prawn').map(b => b.id), [daniel.id]);
+const out = removeMenuItem('king-prawn');
+t('so it is retired, not removed', out.action, 'retired');
+t('it names the bookings it was kept for', out.bookings.map(b => b.id), [daniel.id]);
+t('customers no longer see it', inCat('premium').some(m => m.id === 'king-prawn'), false);
+t('Gino no longer sees it either', inCatAll('premium').some(m => m.id === 'king-prawn'), false);
+t('but byId still resolves it', byId('king-prawn').en, 'King Prawn in Pork Belly & Shiso');
+t('SO THE AGREED TOTAL IS UNCHANGED', quote(daniel).subtotal, wasTotal);
+t('and the prep sheet still lists it', prepSheet(daniel).length, wasPrep);
+t('retiring is recorded', kinds().at(-1), 'item.retired');
+t('it shows in the retired list for its category', retiredIn('premium').map(m => m.id), ['king-prawn']);
+
+restoreItem('king-prawn');
+t('restoring puts it back for customers', inCat('premium').some(m => m.id === 'king-prawn'), true);
+t('and the total still has not moved', quote(daniel).subtotal, wasTotal);
+t('restoring is recorded', kinds().at(-1), 'item.restored');
+
+// undo, for the moment right after a delete
+const snapCustom = addMenuItem({ cat:'vegetable', en:'Lotus Root', cn:'蓮根', price:null });
+const cRemoved = removeMenuItem(snapCustom.id);
+t('a custom item deletes cleanly', byId(snapCustom.id), undefined);
+undoRemove(cRemoved.item);
+t('undo brings a custom item back', byId(snapCustom.id).en, 'Lotus Root');
+const sRemoved = removeMenuItem('sting-ray');
+t('a shipped item deletes cleanly', byId('sting-ray'), undefined);
+undoRemove(sRemoved.item);
+t('undo brings a shipped item back', byId('sting-ray').price, 20);
+t('undo will not double-add', undoRemove(sRemoved.item), null);
+t('undo is recorded', kinds().at(-1), 'item.restored');
+
+t('the chain verifies after every menu change', chainState().ok, true);
+
+// the projection is a projection, not a mutation
+const projected = MENU.length;
+t('reapplying twice changes nothing', (applyMenu(), applyMenu(), MENU.length), projected);
+resetStore();
+t('a reset returns the shipped menu', byId('wagyu').price, 25);
+t('and drops what Gino added', byId('okra'), undefined);
+t('and undeletes what he deleted', byId('squid').en, 'Charcoal Grilled Squid Ika Ichiyaboshi');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 __done(fail);

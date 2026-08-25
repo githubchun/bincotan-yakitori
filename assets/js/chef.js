@@ -384,6 +384,59 @@ function recRow(e){
 }
 
 /* ── Menu manager ─────────────────────────────────────── */
+/* Three bits of screen state. None of it is persisted — it is what Gino is
+   part-way through doing, not something he has decided. */
+let addingIn  = null;   // category whose add form is open
+let removeAsk = null;   // item id waiting on an inline yes/no
+let removedTip = null;  // { item, action } — the undo strip after a removal
+
+const UNITS = ['skewer','pc','order','pax','bottle','box'];
+
+/* Chicken and vegetables come with the set; everything else carries a price. */
+const defaultMode = cat => (cat === 'chicken' || cat === 'vegetable') ? 'set' : 'fixed';
+
+function removeConfirm(m){
+  const used = itemInUse(m.id);
+  return `<div class="mconfirm">
+    <p>${used.length
+      ? `<b>${used.length} booking${used.length === 1 ? '' : 's'}</b> already ${
+          used.length === 1 ? 'lists' : 'list'} this — ${
+          esc(used.map(b => b.name).join(', '))}. It comes off both menus, but stays on
+         ${used.length === 1 ? 'that bill' : 'those bills'} at the price they were quoted.`
+      : `Nothing has been ordered with this. It will be deleted.`}</p>
+    <div class="mconfirm-a">
+      <button class="btn btn-sm" data-rmyes="${m.id}">${used.length ? 'Retire it' : 'Delete it'}</button>
+      <button class="btn btn-ghost btn-sm" data-rmno="1">Keep it</button>
+    </div>
+  </div>`;
+}
+
+function addForm(cat){
+  const mode = defaultMode(cat);
+  const opt = (v, label) => `<option value="${v}"${v === mode ? ' selected' : ''}>${label}</option>`;
+  return `<form class="madd" data-addcat="${cat}" data-mode="${mode}">
+    <div class="madd-g">
+      <label class="madd-f">Name<input name="en" required maxlength="60" autocomplete="off" placeholder="Okra"></label>
+      <label class="madd-f">Japanese / Chinese<input name="cn" maxlength="60" autocomplete="off" placeholder="秋葵"></label>
+    </div>
+    <div class="madd-g">
+      <label class="madd-f">Charged<select name="mode">
+        ${opt('fixed','At a price')}${opt('set','Included in the set')}${opt('ask','Quoted on request')}
+      </select></label>
+      <label class="madd-f madd-p">Price<input name="price" type="number" step="0.5" min="0" value="5"></label>
+      <label class="madd-f madd-p">Per<select name="unit">${
+        UNITS.map(u => `<option${u === 'skewer' ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
+      <label class="madd-f madd-p">Minimum<input name="min" type="number" step="1" min="1" value="10"></label>
+    </div>
+    <label class="madd-rec"><input type="checkbox" name="rec"> Chef’s pick</label>
+    <p class="madd-err" data-adderr hidden></p>
+    <div class="madd-a">
+      <button class="btn btn-sm" type="submit">Add to ${CATS[cat].label}</button>
+      <button class="btn btn-ghost btn-sm" type="button" data-addcancel="1">Cancel</button>
+    </div>
+  </form>`;
+}
+
 function ChefMenu(){
   const row = m => {
     const off = m.active === false;
@@ -401,19 +454,45 @@ function ChefMenu(){
                value="${m.price}" data-price="${m.id}" aria-label="Price for ${esc(m.en)}"></label>`}
       <button class="tog ${off?'':'on'}" data-toggle="${m.id}"
         role="switch" aria-checked="${!off}" aria-label="${off?'Show':'Hide'} ${esc(m.en)}"><i></i></button>
-    </div>`;
+      <button class="mrow-x" data-rm="${m.id}" aria-label="Remove ${esc(m.en)}">&times;</button>
+    </div>
+    ${removeAsk === m.id ? removeConfirm(m) : ''}`;
   };
+
+  const retiredBlock = cat => {
+    const gone = retiredIn(cat);
+    if (!gone.length) return '';
+    return `<details class="mret">
+      <summary>${gone.length} retired item${gone.length === 1 ? '' : 's'}</summary>
+      <p class="mret-w">Off both menus. Kept only so the bookings that ordered them still add up.</p>
+      ${gone.map(m => `<div class="mrow off">
+        <img src="${imgOf(m)}" alt="">
+        <div class="mrow-b">
+          <div class="mrow-en">${esc(m.en)}</div>
+          <div class="mrow-cn">${esc(itemInUse(m.id).map(b => b.id).join(', ')) || '—'}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-restore="${m.id}">Put it back</button>
+      </div>`).join('')}
+    </details>`;
+  };
+
   return chefShell('#/chef/menu', `
     <div class="chef-top"><div>
       <h1 class="display chef-h1">Menu</h1>
       <p class="muted" style="font-size:.88rem">
-        Change a price or switch an item off when it isn’t in season. Customers see this immediately;
-        bookings already placed keep the price they were quoted.</p>
+        Change a price, switch an item off when it isn’t in season, or add one of your own.
+        Customers see this immediately; bookings already placed keep the price they were quoted.</p>
     </div></div>
+    ${removedTip ? `<div class="mundo">
+      <span><b>${esc(removedTip.item.en)}</b> ${removedTip.action === 'retired' ? 'retired' : 'removed'}.</span>
+      <button class="btn btn-ghost btn-sm" data-undo="1">Undo</button>
+    </div>` : ''}
     ${Object.entries(CATS).map(([k,c]) => `
       <section class="msec">
         <h2 class="msec-t">${c.label} <span class="jp muted">${c.cn}</span></h2>
         ${inCatAll(k).map(row).join('')}
+        ${addingIn === k ? addForm(k) : `<button class="madd-o" data-add="${k}">+ Add an item</button>`}
+        ${retiredBlock(k)}
       </section>`).join('')}`);
 }
 
@@ -564,13 +643,69 @@ function wireChef(path){
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
 
-  /* menu manager */
-  $$('[data-toggle]').forEach(el => el.addEventListener('click', () => {
-    const m = byId(el.dataset.toggle); m.active = m.active === false; rerender();
-  }));
-  $$('[data-price]').forEach(el => el.addEventListener('change', e => {
-    const m = byId(el.dataset.price), v = parseFloat(e.target.value);
-    if (!isNaN(v) && v >= 0) m.price = v;
+  /* menu manager — every one of these goes through the store, so it survives a
+     reload and shows up in the record. Nothing here edits MENU directly. */
+  const menuDid = fn => { removedTip = null; removeAsk = null; fn(); rerender(); };
+
+  $$('[data-toggle]').forEach(el => el.addEventListener('click', () =>
+    menuDid(() => toggleItem(el.dataset.toggle))));
+
+  $$('[data-price]').forEach(el => el.addEventListener('change', e =>
+    menuDid(() => setItemPrice(el.dataset.price, parseFloat(e.target.value)))));
+
+  $$('[data-rm]').forEach(el => el.addEventListener('click', () => {
+    removedTip = null;
+    removeAsk = removeAsk === el.dataset.rm ? null : el.dataset.rm;
     rerender();
   }));
+  $('[data-rmno]')?.addEventListener('click', () => { removeAsk = null; rerender(); });
+  $$('[data-rmyes]').forEach(el => el.addEventListener('click', () => {
+    const out = removeMenuItem(el.dataset.rmyes);
+    removeAsk = null;
+    removedTip = out ? { item:out.item, action:out.action } : null;
+    rerender();
+  }));
+  $('[data-undo]')?.addEventListener('click', () => {
+    const { item, action } = removedTip;
+    action === 'retired' ? restoreItem(item.id) : undoRemove(item);
+    removedTip = null;
+    rerender();
+  });
+  $$('[data-restore]').forEach(el => el.addEventListener('click', () =>
+    menuDid(() => restoreItem(el.dataset.restore))));
+
+  /* add form */
+  $$('[data-add]').forEach(el => el.addEventListener('click', () => {
+    removedTip = null; removeAsk = null;
+    addingIn = el.dataset.add;
+    rerender();
+  }));
+  $('[data-addcancel]')?.addEventListener('click', () => { addingIn = null; rerender(); });
+
+  const form = $('[data-addcat]');
+  if (form) {
+    /* Show the price fields only when there is a price. Done without a rerender
+       so whatever he has already typed stays put. */
+    form.mode.addEventListener('change', () => { form.dataset.mode = form.mode.value; });
+    form.en.focus();
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const err = $('[data-adderr]');
+      const say = msg => { err.textContent = msg; err.hidden = false; };
+      const en = form.en.value.trim();
+      if (!en) return say('It needs a name.');
+
+      const mode  = form.mode.value;
+      const price = mode === 'set' ? null : mode === 'ask' ? 'ask' : parseFloat(form.price.value);
+      if (mode === 'fixed' && !(price >= 0)) return say('Give it a price, or change how it is charged.');
+
+      const min = parseInt(form.min.value, 10);
+      addMenuItem({ cat: form.dataset.addcat, en, cn: form.cn.value.trim(), price,
+                    unit: mode === 'fixed' ? form.unit.value : undefined,
+                    min:  mode === 'fixed' && min > 1 ? min : undefined,
+                    rec:  form.rec.checked });
+      addingIn = null;
+      rerender();
+    });
+  }
 }

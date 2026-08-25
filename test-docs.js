@@ -16,9 +16,9 @@ t('58 image files [DATA-MODEL.md]', __imageCount(), 58);
 t('5 categories', Object.keys(CATS).length, 5);
 t('minimum spend is $700', minimumSpend(), 700);
 t('hold is $70', round2(SETTINGS.holdPct*minimumSpend()), 70);
-t('STORE_KEY is v3', STORE_KEY, 'bincotan.store.v3');
+t('STORE_KEY is v4', STORE_KEY, 'bincotan.store.v4');
 t('genesis prev is 64 zeros', GENESIS, '0'.repeat(64));
-t('14 event kinds', Object.keys(EVENTS).length, 14);
+t('18 event kinds', Object.keys(EVENTS).length, 18);
 
 // the worked example in DATA-MODEL.md and DECISIONS.md
 const ex = { hours:5, pax:12,
@@ -68,8 +68,8 @@ t("and surfaced separately", quote({hours:4,pax:12,chicken:[],veg:[],addons:{uni
 
 // counts quoted in README.md — these drift silently otherwise
 t('9 tamper scenarios  [README.md]', __count('test-ledger.js', /^bad = clone\(\);|^let bad = clone\(\);/gm), 9);
-t('28 e2e assertions   [README.md]', __count('e2e.html', /log\(/g) - 1, 28);
-t('4 test suites       [README.md]', __count('run-tests.sh', /^run /gm), 4);
+t('50 e2e assertions   [README.md]', __count('e2e.html', /log\(/g) - 1, 50);
+t('4 test suites       [README.md]', __count('run-tests.sh', /^sect /gm), 4);
 t('6 scripts in index  [README.md]', __count('index.html', /script src/g), 6);
 t('3 docs in docs/     [README.md]', __docCount(), 3);
 

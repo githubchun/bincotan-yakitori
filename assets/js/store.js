@@ -86,6 +86,9 @@ function seedStore(){
     /* Gino opens a month at a time, then closes individual evenings inside it. */
     releasedMonths: [thisMonth, nextMonth],
     log: [],
+    /* What Gino has done to the menu. The MENU array in menu-data.js stays the
+       shipped original; this is the diff on top of it. See applyMenu(). */
+    menu: { edits:{}, custom:[], retired:[], deleted:[] },
     blocked: [serviceDay(12), serviceDay(15), serviceDay(41)],
     bookings: [
       { id:'BY-0418', name:'Daniel Wong', phone:'+65 9123 4567', date:serviceDay(3), time:'19:00',
@@ -134,23 +137,28 @@ function seedStore(){
 
 /* Bump this whenever the record shape changes. Anything saved under an older key
    is simply ignored, so a returning visitor never loads data this code can't read. */
-const STORE_KEY = 'bincotan.store.v3';
+const STORE_KEY = 'bincotan.store.v4';
 
 /* Belt and braces: even within a version, refuse a record that's missing a field
    the app depends on. A half-written or hand-edited store re-seeds instead of
    throwing mid-render and leaving a blank page. */
 function isUsableStore(raw){
-  return !!raw
+  return !!(raw
     && Array.isArray(raw.bookings)
     && Array.isArray(raw.blocked)
     && Array.isArray(raw.releasedMonths)
     && Array.isArray(raw.log)
     && typeof raw.seq === 'number'
+    && raw.menu && typeof raw.menu === 'object'
+    && raw.menu.edits && typeof raw.menu.edits === 'object'
+    && Array.isArray(raw.menu.custom)
+    && Array.isArray(raw.menu.retired)
+    && Array.isArray(raw.menu.deleted)
     && raw.bookings.every(b =>
          b && typeof b.id === 'string' && typeof b.date === 'string'
          && Array.isArray(b.chicken) && Array.isArray(b.veg)
          && b.addons && typeof b.addons === 'object'
-         && Array.isArray(b.payments));
+         && Array.isArray(b.payments)));
 }
 
 let STORE = (() => {
@@ -200,7 +208,7 @@ function seedLog(){
       summary:`${shortDate(b.date)} — event completed` });
   });
 }
-function resetStore(){ STORE = seedStore(); seedLog(); saveStore(); }
+function resetStore(){ STORE = seedStore(); applyMenu(); seedLog(); saveStore(); }
 if (!STORE.log.length) { seedLog(); }
 
 const ledger    = () => STORE.log;
@@ -250,6 +258,143 @@ function toggleMonth(m){
   releasing ? STORE.releasedMonths.push(m) : STORE.releasedMonths.splice(i, 1);
   record(releasing ? 'month.released' : 'month.closed', {
     summary: `${m} ${releasing ? 'opened for booking' : 'closed'}`, data:{ month:m } });
+}
+
+/* ── the menu ────────────────────────────────────────────
+   `MENU` in menu-data.js is the menu Gino was shipped. Everything he changes
+   afterwards lives in STORE.menu and is re-projected onto that array on load,
+   so byId / inCat / quote / prepSheet never learn that any of this exists.
+
+   Removing splits two ways, and which one you get is not a choice:
+     · nothing references the item  →  it is deleted
+     · a booking references it      →  it is retired: gone from both menus, but
+                                       still resolvable by byId, so the bill that
+                                       was agreed still prices out to what was
+                                       agreed. Restorable.                    */
+const MENU_BASE = MENU.map(m => ({ ...m }));
+
+/** Rebuild MENU in place from the shipped list plus Gino's changes. Idempotent. */
+function applyMenu(){
+  const cfg = STORE.menu;
+  MENU.length = 0;
+  MENU_BASE.forEach(b => { if (!cfg.deleted.includes(b.id)) MENU.push({ ...b }); });
+  cfg.custom.forEach(c => MENU.push({ ...c }));
+  MENU.forEach(m => {
+    if (cfg.edits[m.id]) Object.assign(m, cfg.edits[m.id]);
+    if (cfg.retired.includes(m.id)) m.retired = true;
+  });
+}
+
+/** Every booking that would be repriced if this item vanished. */
+function itemInUse(id){
+  return STORE.bookings.filter(b =>
+    (b.chicken || []).includes(id) ||
+    (b.veg || []).includes(id) ||
+    !!(b.addons || {})[id]);
+}
+
+/** A readable id from the English name, never colliding with one already taken. */
+function slugId(en){
+  const base = String(en || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+                 .replace(/^-+|-+$/g, '').slice(0, 32) || 'item';
+  let id = base, n = 2;
+  while (byId(id) || STORE.menu.deleted.includes(id)) id = `${base}-${n++}`;
+  return id;
+}
+
+/** How a price reads in the record, where 'in the set' is as real as a number. */
+const priceLabel = p => p === null ? 'in the set' : p === 'ask' ? 'on request' : money(p);
+
+function addMenuItem(f){
+  const item = { id: slugId(f.en), cat: f.cat, en: String(f.en || '').trim(),
+                 cn: String(f.cn || '').trim(), price: f.price, noImg: true };
+  if (f.unit) item.unit = f.unit;
+  if (f.min)  item.min  = f.min;
+  if (f.rec)  item.rec  = true;
+  STORE.menu.custom.push(item);
+  applyMenu();
+  record('item.added', {
+    summary: `${item.en} added to ${CATS[item.cat].label}`,
+    data:{ item:item.en, chinese:item.cn || '—', category:CATS[item.cat].label,
+           price:priceLabel(item.price), unit:item.unit || '—', minimum:item.min || '—' } });
+  return byId(item.id);
+}
+
+/**
+ * Delete it if no booking would notice; retire it if one would.
+ * @returns {{action:'removed'|'retired', item:Object, bookings:Object[]}}
+ */
+function removeMenuItem(id){
+  const m = byId(id);
+  if (!m || m.retired) return null;
+  const en = m.en, cat = m.cat, used = itemInUse(id);
+
+  if (used.length){
+    STORE.menu.retired.push(id);
+    applyMenu();
+    record('item.retired', {
+      summary: `${en} retired — ${used.length} booking${used.length === 1 ? '' : 's'} still list it`,
+      data:{ item:en, category:CATS[cat].label, keptFor:used.map(b => b.id).join(', ') } });
+    return { action:'retired', item:byId(id), bookings:used };
+  }
+
+  const i = STORE.menu.custom.findIndex(c => c.id === id);
+  if (i === -1) STORE.menu.deleted.push(id);
+  else STORE.menu.custom.splice(i, 1);
+  delete STORE.menu.edits[id];
+  applyMenu();
+  record('item.removed', {
+    summary: `${en} removed from ${CATS[cat].label}`,
+    data:{ item:en, category:CATS[cat].label, usedByAnyBooking:'no' } });
+  return { action:'removed', item:m, bookings:[] };
+}
+
+/** Undo a delete, while the strip offering it is still on screen. */
+function undoRemove(snap){
+  if (!snap || byId(snap.id)) return null;
+  const i = STORE.menu.deleted.indexOf(snap.id);
+  if (i !== -1) STORE.menu.deleted.splice(i, 1);      // a shipped item: un-delete it
+  else { const { retired, ...clean } = snap; STORE.menu.custom.push(clean); }
+  applyMenu();
+  record('item.restored', { summary:`${snap.en} put back on the menu`, data:{ item:snap.en } });
+  return byId(snap.id);
+}
+
+/** Put a retired item back on the menu. */
+function restoreItem(id){
+  const i = STORE.menu.retired.indexOf(id);
+  if (i === -1) return null;
+  const en = byId(id)?.en || id;
+  STORE.menu.retired.splice(i, 1);
+  applyMenu();
+  record('item.restored', { summary:`${en} put back on the menu`, data:{ item:en } });
+  return byId(id);
+}
+
+function setItemPrice(id, v){
+  const m = byId(id);
+  if (!m || m.price === null || m.price === 'ask') return null;
+  const en = m.en, was = m.price;
+  if (!(v >= 0) || v === was) return null;
+  (STORE.menu.edits[id] ||= {}).price = v;
+  applyMenu();
+  record('price.changed', {
+    summary: `${en} — ${money(was)} → ${money(v)}`,
+    data:{ item:en, from:money(was), to:money(v) } });
+  return byId(id);
+}
+
+/** Switch an item off when it isn't in season. Bookings already placed keep it. */
+function toggleItem(id){
+  const m = byId(id);
+  if (!m) return null;
+  const en = m.en, showing = m.active === false;   // it was hidden; turning it back on
+  (STORE.menu.edits[id] ||= {}).active = showing;
+  applyMenu();
+  record('item.toggled', {
+    summary: `${en} ${showing ? 'back on the menu' : 'hidden from the menu'}`,
+    data:{ item:en, customersSeeIt: showing ? 'yes' : 'no' } });
+  return byId(id);
 }
 
 /** A customer takes a date. It is theirs immediately — Gino doesn't approve it. */
@@ -376,3 +521,6 @@ function shoppingList(b){
   });
   return groups;
 }
+
+/* Project Gino's menu changes onto MENU before anything renders. */
+applyMenu();

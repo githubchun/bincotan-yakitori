@@ -30,15 +30,16 @@ project owner to review first.
 |---|---|
 | Customer flow — browse, book, build menu, pay | Complete and walkable |
 | Chef flow — bookings, calendar, menu, settings, records | Complete and walkable |
+| Menu manager — reprice, hide, add, remove | Complete, persisted and recorded |
 | Pricing and payment schedule | Complete, 43 assertions |
 | Transaction record + tamper detection | Complete, 34 assertions incl. 9 tamper scenarios |
-| Booking lifecycle | Complete, 70 assertions |
+| Booking lifecycle + menu manager | Complete, 121 assertions |
 | Documentation checked against the code | 36 assertions |
 | Responsive down to 360px | Verified across every route |
 | Backend, auth, mail delivery, real payments | **Not started** |
 | Shown to Gino | **Not yet** |
 
-**183 assertions pass**, plus four browser harnesses. `./run-tests.sh` runs the
+**234 assertions pass**, plus four browser harnesses. `./run-tests.sh` runs the
 unit suites; the browser harnesses need the site served (see README).
 
 ---
@@ -89,7 +90,19 @@ The prototype's shape is deliberately close to what the real thing needs:
 - **Server-side pricing** — `pricing.js` moves across unchanged. The browser
   keeps using it for the live estimate; the server's number is the one charged.
 
-### 4. Replace the placeholders
+### 4. Let Gino upload item photos
+
+He can add menu items, but not a picture of one — a new item shows a drawn
+placeholder while the 54 shipped ones have real cutouts. The seam is already
+in: `imgOf()` returns `m.photo` if it is set, so an upload only has to write
+that field.
+
+What it needs is somewhere to put the file. Base64 in `localStorage` is not it
+— the quota is about 5MB and a handful of photos would fill it and take the
+whole store down with it. This wants object storage, which means it waits for
+the backend in step 3.
+
+### 5. Replace the placeholders
 
 Everything below is invented and marked in the UI with a dotted gold underline.
 All of it lives in `SETTINGS` in `assets/js/menu-data.js`.
@@ -128,6 +141,9 @@ Ordered by how much they'd change the work.
 ## Known gaps
 
 Things that are wrong or missing and are *known* to be — not oversights.
+
+**A menu item Gino adds has no photo.** It falls back to a drawn skewer. See
+step 4 above — the fix needs somewhere to store an uploaded file.
 
 **A held date is never released.** Booking takes the evening immediately and the
 holding deposit is confirmed by hand afterwards. If it never arrives, the date

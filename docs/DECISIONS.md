@@ -159,6 +159,33 @@ server's number gets charged.
 Keep them pure. If either starts importing from `store.js`, that boundary is
 gone. (`ledger.js` briefly did, for a date formatter; it now carries its own.)
 
+### Removing a menu item never reprices a booking
+
+A booking stores item *ids*, and `quote()` skips an id it cannot resolve. So
+deleting an item outright would silently drop it from every bill that ordered
+it — a confirmed, part-paid order would just get cheaper, with nothing in the
+record explaining why.
+
+So `removeMenuItem()` checks first. If no booking references the item it is
+deleted properly; if one does, it is **retired** — off both the customer's menu
+and Gino's, but still resolvable by `byId`, so old bills and prep sheets are
+untouched. Gino is told which of the two happened and can undo either.
+
+Rejected: always deleting (silently wrong), and always retiring (the list grows
+forever with items that were only ever typos). The rule is not offered to Gino
+as a choice, because the right answer is determined entirely by the data.
+
+### The menu is a projection, not a mutation
+
+The chef's menu manager used to edit the `MENU` array directly. It worked until
+you reloaded, at which point every price change and every switched-off item was
+gone — and nothing had been written to the transaction record either, though
+`price.changed` and `item.toggled` had been defined for it from the start.
+
+`MENU` is now the shipped menu and is never edited. Gino's changes live in
+`STORE.menu` and are re-projected onto it by `applyMenu()`. Nothing downstream —
+`byId`, `inCat`, `quote`, `prepSheet` — knows this happens.
+
 ### `store.js` is the only file that touches persistence
 
 Every mutation goes through a function there, and every one of those calls
@@ -167,7 +194,7 @@ That's what makes "every action leaves a record" checkable rather than hopeful.
 
 ### The store's key is versioned, and its shape is validated
 
-`STORE_KEY = 'bincotan.store.v3'`. Changing a record shape without bumping this
+`STORE_KEY = 'bincotan.store.v4'`. Changing a record shape without bumping this
 once produced a completely blank page for every returning visitor. On top of
 that, `isUsableStore()` refuses anything missing a field the code depends on,
 so a future mistake degrades to a re-seed rather than a crash.

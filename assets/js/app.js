@@ -714,7 +714,7 @@ function crash(err){
     <button class="btn btn-primary btn-lg" id="crashReset">Reset the data and reload</button>
   </div></section>`;
   $('#crashReset')?.addEventListener('click', () => {
-    try { localStorage.removeItem('bincotan.store.v3'); } catch {}
+    try { localStorage.removeItem(STORE_KEY); } catch {}
     location.hash = '#/'; location.reload();
   });
 }

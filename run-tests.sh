@@ -16,20 +16,25 @@ run() {
     vm.runInContext(process.argv.slice(1).map(f=>fs.readFileSync(f,'utf8')).join('\n;\n'), ctx);
   " "$@"
 }
-TOTAL=0
-tally(){ TOTAL=$((TOTAL + $1)); }
+# Capture rather than pipe: a pipeline reports tee's exit status, so a file that
+# THREW instead of failing an assertion used to print nothing and still be
+# counted as a clean pass.
+N=0
+sect() {
+  N=$((N + 1)); title=$1; shift
+  echo "── $title ──"
+  if run "$@" > "/tmp/_t$N" 2>&1; then cat "/tmp/_t$N"; else
+    cat "/tmp/_t$N"; echo "  ✗ $title failed or threw — stopping here"; exit 1
+  fi
+}
 
-echo "── pricing + validation ──"
-run assets/js/menu-data.js assets/js/pricing.js test.js | tee /tmp/_t1
+sect "pricing + validation" assets/js/menu-data.js assets/js/pricing.js test.js
 echo
-echo "── transaction record ──"
-run assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js test-ledger.js | tee /tmp/_t2
+sect "transaction record" assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js test-ledger.js
 echo
-echo "── documentation claims ──"
-run assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js assets/js/store.js test-docs.js | tee /tmp/_t3
+sect "documentation claims" assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js assets/js/store.js test-docs.js
 echo
-echo "── booking lifecycle ──"
-run assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js assets/js/store.js test-flow.js | tee /tmp/_t4
+sect "booking lifecycle" assets/js/menu-data.js assets/js/pricing.js assets/js/ledger.js assets/js/store.js test-flow.js
 
 echo
 echo "════════════════════════════════════════"
