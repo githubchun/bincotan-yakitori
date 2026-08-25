@@ -27,7 +27,6 @@ function chefShell(active, body){
       <a class="ctab ctab-out" href="#/">View public site ↗</a>
     </div>
   </header>
-  <div class="demo-bar">Demo — these bookings are made up. Nothing here is real and nothing sends.</div>
   <main class="wrap chef-main">${body}</main>`;
 }
 
@@ -41,7 +40,7 @@ function ChefBookings(){
     menu: todo.filter(b => b.status === 'menu').length
   };
   const list = chefFilter === 'past'
-    ? BOOKINGS.filter(b => daysUntil(b.date) < 0 || b.status === 'done').sort((a,b) => b.date.localeCompare(a.date))
+    ? past()
     : chefFilter === 'upcoming' ? upcoming() : todo;
 
   if (!chefSel || !list.some(b => b.id === chefSel)) chefSel = list[0]?.id || null;
@@ -111,8 +110,8 @@ function nextUpCard(b){
 
 const first  = b => esc(b.name.split(' ')[0]);
 const waText = {
-  confirm: b => `Hi ${b.name.split(' ')[0]}! Your yakitori night on ${prettyDate(b.date)} is confirmed. Here's your private link to choose your 7 chicken + 2 vegetable skewers: https://bincotan.example/order/${b.id}`,
-  nudge:   b => `Hi ${b.name.split(' ')[0]}! Just a reminder to pick your skewers for ${prettyDate(b.date)} — here's your link: https://bincotan.example/order/${b.id}`,
+  confirm: b => `Hi ${b.name.split(' ')[0]}! Your yakitori night on ${prettyDate(b.date)} is confirmed. Here's your private link to choose your 7 chicken + 2 vegetable skewers: ${orderUrl(b.id)}`,
+  nudge:   b => `Hi ${b.name.split(' ')[0]}! Just a reminder to pick your skewers for ${prettyDate(b.date)} — here's your link: ${orderUrl(b.id)}`,
   deposit: b => `Hi ${b.name.split(' ')[0]}! Got your menu, thank you. To lock in ${prettyDate(b.date)}, the 50% deposit is ${money(quote({hours:b.hours,addons:b.addons}).deposit)} via PayNow — reference ${b.id}.`,
   checkin: b => `Hi ${b.name.split(' ')[0]}! Looking forward to ${prettyDate(b.date)}. Just checking you'll have a table for the grill, lighting, and a portable gas stove ready. See you at ${b.time}.`
 };
@@ -127,7 +126,9 @@ function bookingRow(b){
       <span class="pill ${s.cls}">${s.label}</span>
     </div>
     <div class="bk-date">${shortDate(b.date)} · ${b.pax} pax · ${b.time}</div>
-    ${s.todo ? `<div class="bk-todo">${s.todo}</div>` : ''}
+    ${b.status === 'menu' && b.depositClaimed
+        ? '<div class="bk-todo hot">Says they’ve paid — confirm it landed</div>'
+        : s.todo ? `<div class="bk-todo">${s.todo}</div>` : ''}
   </button>`;
 }
 
@@ -165,6 +166,12 @@ function bookingDetail(b){
     ${b.notes ? `<div class="dnote"><small>Their note</small>${esc(b.notes)}</div>` : ''}
 
     <div class="dacts">${detailActions(b)}</div>
+    ${b.status === 'conf' || (b.status === 'menu' && !b.depositClaimed)
+      ? `<div class="linkbox"><small>Their private menu link</small><code>${esc(orderUrl(b.id))}</code></div>` : ''}
+    ${b.status === 'menu' && b.depositClaimed
+      ? `<div class="notice notice-info" style="margin-bottom:4px"><span>◆</span><div>
+          <b>${esc(first(b))} says the deposit is sent.</b> Check PayNow for reference <b>${b.id}</b>,
+          then confirm above.</div></div>` : ''}
 
     <div class="dsec"><small>Their menu</small>
       <div class="mchips">${chips(b.chicken)}</div>
@@ -186,12 +193,15 @@ function detailActions(b){
     `<a class="btn ${cls}" href="${waLink(b, kind)}" target="_blank" rel="noopener">${label}</a>`;
   switch (b.status){
     case 'req':  return `<button class="btn btn-primary" data-do="confirm" data-id="${b.id}">Confirm the date</button>
-                         ${wa('confirm', `Message ${first(b)}`)}
                          <button class="btn btn-ghost danger" data-do="decline" data-id="${b.id}">Decline</button>`;
-    case 'conf': return `${wa('nudge', 'Send the menu link', 'btn-primary')}
-                         <button class="btn btn-ghost" data-do="menu" data-id="${b.id}">Mark menu received</button>`;
-    case 'menu': return `<button class="btn btn-primary" data-do="paid" data-id="${b.id}">Mark deposit received</button>
-                         ${wa('deposit', 'Ask for the deposit')}`;
+    case 'conf': return `${wa('confirm', `WhatsApp ${first(b)} the link`, 'btn-primary')}
+                         <button class="btn btn-ghost" data-copy="${b.id}">Copy link</button>
+                         <a class="btn btn-ghost" href="${orderPath(b.id)}">Open it yourself</a>`;
+    case 'menu': return b.depositClaimed
+      ? `<button class="btn btn-primary" data-do="paid" data-id="${b.id}">Confirm ${money(quote({hours:b.hours,addons:b.addons}).deposit)} landed</button>
+         ${wa('deposit', `Message ${first(b)}`)}`
+      : `<button class="btn btn-primary" data-do="paid" data-id="${b.id}">Mark deposit received</button>
+         ${wa('deposit', 'Ask for the deposit')}`;
     case 'paid': return `${wa('checkin', `Message ${first(b)}`, 'btn-primary')}
                          <button class="btn btn-ghost" data-print="${b.id}">Print prep sheet</button>
                          <button class="btn btn-ghost" data-do="done" data-id="${b.id}">Mark done</button>`;
@@ -256,7 +266,7 @@ function chefCalGrid(){
       cls += needs ? ' c-todo' : ' c-booked';
       inner += `<span class="cname">${esc(bk.name.split(' ')[0])}</span><span class="cpax">${bk.pax} pax</span>`;
       attr = `data-open="${bk.id}"`;
-    } else if (BLOCKED.has(s)){
+    } else if (isBlocked(s)){
       cls += ' c-blocked'; inner += '<span class="cname">Blocked</span>';
       attr = past ? '' : `data-block="${s}"`;
     } else if (!isService || past){
@@ -364,7 +374,7 @@ function ChefSettings(){
 }
 
 /* ── wiring ───────────────────────────────────────────── */
-function wireChef(h){
+function wireChef(path){
   const rerender = () => render();
 
   $$('[data-bk]').forEach(el => el.addEventListener('click', () => {
@@ -385,16 +395,25 @@ function wireChef(h){
     const b = bookingById(el.dataset.open);
     chefSel = b.id;
     chefFilter = NEEDS_ACTION.includes(b.status) ? 'action' : 'upcoming';
-    if (h !== '#/chef') location.hash = '#/chef'; else rerender();
+    if (pathOf() !== 'chef') location.hash = '#/chef'; else rerender();
   }));
 
   $$('[data-do]').forEach(el => el.addEventListener('click', () => {
-    const b = bookingById(el.dataset.id);
-    const to = { confirm:'conf', menu:'menu', paid:'paid', done:'done' }[el.dataset.do];
+    const id = el.dataset.id;
     if (el.dataset.do === 'decline'){
-      BOOKINGS.splice(BOOKINGS.indexOf(b), 1); chefSel = null;
-    } else b.status = to;
+      if (!confirm('Decline and remove this request?')) return;
+      declineBooking(id); chefSel = null;
+    } else {
+      setStatus(id, { confirm:'conf', menu:'menu', paid:'paid', done:'done' }[el.dataset.do]);
+    }
     rerender();
+  }));
+
+  $$('[data-copy]').forEach(el => el.addEventListener('click', async () => {
+    const url = orderUrl(el.dataset.copy);
+    try { await navigator.clipboard.writeText(url); el.textContent = 'Copied ✓'; }
+    catch { el.textContent = 'Copy failed — select it below'; }
+    setTimeout(() => { el.textContent = 'Copy link'; }, 2200);
   }));
 
   $$('[data-print]').forEach(el => el.addEventListener('click', () => {
@@ -407,9 +426,7 @@ function wireChef(h){
   $('#ccPrev')?.addEventListener('click', () => { chefMonth.setMonth(chefMonth.getMonth()-1); rerender(); });
   $('#ccNext')?.addEventListener('click', () => { chefMonth.setMonth(chefMonth.getMonth()+1); rerender(); });
   $$('[data-block]').forEach(el => el.addEventListener('click', () => {
-    const d = el.dataset.block;
-    BLOCKED.has(d) ? BLOCKED.delete(d) : BLOCKED.add(d);
-    rerender();
+    toggleBlocked(el.dataset.block); rerender();
   }));
 
   $$('[data-toggle]').forEach(el => el.addEventListener('click', () => {

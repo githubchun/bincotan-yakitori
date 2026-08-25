@@ -6,31 +6,12 @@ const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
-/* ── state ───────────────────────────────────────────── */
-const DEFAULT = {
-  booking: { date:null, time:'19:00', pax:10, hours:4, name:'', phone:'', address:'', notes:'' },
-  order:   { chicken:[], veg:[], addons:{} },
-  paid:    false
-};
-let state = load();
-if (safeSearch().includes('demo') && !state.order.chicken.length) seedDemo();
-function seedDemo(){
-  const d = new Date(); d.setDate(d.getDate() + 21);
-  while (!SETTINGS.serviceDays.includes(d.getDay())) d.setDate(d.getDate() + 1);
-  state.booking = { date: iso(d), time:'19:00', pax:12, hours:5,
-    name:'Rachel Tan', phone:'+65 9123 4567', address:'42 Jalan Kayu, Singapore',
-    notes:'One guest is allergic to shellfish. It’s my father’s 60th.' };
-  state.order = { chicken:['thigh-leek','skin','tail','meatball','liver','wing','neck'],
-    veg:['asparagus','white-corn'],
-    addons:{ 'pb-shisho':12, 'wagyu':10, 'king-prawn':12, 'sake-dassai-23':1, 'uni':1 } };
-  state.paid = false; save();
-}
-function load(){ try { return { ...structuredClone(DEFAULT), ...JSON.parse(localStorage.getItem('bincotan') || '{}') }; }
-                 catch { return structuredClone(DEFAULT); } }
-function safeSearch(){ try { return location.search || ''; } catch { return ''; } }
-/* Sandboxed embeds can block storage entirely — the app must still work without it. */
-function save(){ try { localStorage.setItem('bincotan', JSON.stringify(state)); } catch {} }
-function reset(){ state = structuredClone(DEFAULT); save(); go('#/'); }
+/* ── state ──────────────────────────────────────────────
+   The customer's in-progress date/party details live here only until they
+   submit; from that moment on the booking record in the store is the truth,
+   and both sides of the app read it. */
+let draft = { date:null, time:'19:00', pax:SETTINGS.minPax, hours:SETTINGS.chefServiceHours,
+              name:'', phone:'', addr:'', notes:'' };
 
 /* ── shared chrome ───────────────────────────────────── */
 const NAVLINKS = [['#/menu','Menu'],['#/reserve','Reserve'],['#/order','Build a Menu'],['#/chef','Chef']];
@@ -264,14 +245,12 @@ function Menu(){
 }
 
 /* ══ RESERVE ═════════════════════════════════════════ */
-/* Open on the current month, unless it has almost nothing left to offer. */
-const calMonth = (() => {
-  const t = new Date(); t.setHours(0,0,0,0);
-  const m = new Date(t.getFullYear(), t.getMonth(), 1);
-  let open = 0, d = new Date(t);
-  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0);
-  for (; d <= end; d.setDate(d.getDate() + 1))
-    if (SETTINGS.serviceDays.includes(d.getDay()) && !unavailableDates().has(iso(d))) open++;
+let calMonth = (() => {
+  const t = addDays(0), m = new Date(t.getFullYear(), t.getMonth(), 1);
+  let open = 0;
+  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0), un = unavailableDates();
+  for (const d = new Date(t); d <= end; d.setDate(d.getDate() + 1))
+    if (SETTINGS.serviceDays.includes(d.getDay()) && !un.has(iso(d))) open++;
   if (open < 3) m.setMonth(m.getMonth() + 1);
   return m;
 })();
@@ -297,28 +276,29 @@ function Reserve(){
         <div class="panel-t">Your details</div>
         <div class="row">
           <div class="field"><label>Guests</label>
-            <input class="input" type="number" name="pax" min="${SETTINGS.minPax}" value="${state.booking.pax}"></div>
+            <input class="input" type="number" name="pax" min="${SETTINGS.minPax}" value="${draft.pax}"></div>
           <div class="field"><label>Start time</label>
             <select class="input" name="time">
               ${['17:00','18:00','18:30','19:00','19:30','20:00'].map(t =>
-                `<option ${state.booking.time===t?'selected':''}>${t}</option>`).join('')}
+                `<option ${draft.time===t?'selected':''}>${t}</option>`).join('')}
             </select></div>
         </div>
         <div class="field"><label>Chef hours</label>
           <select class="input" name="hours">
-            ${[4,5,6,7].map(h => `<option value="${h}" ${state.booking.hours==h?'selected':''}>${h} hours${h>4?` — +${money((h-4)*SETTINGS.extraHourFee)}`:' — included'}</option>`).join('')}
+            ${[4,5,6,7].map(h => `<option value="${h}" ${draft.hours==h?'selected':''}>${h} hours${
+              h>4?` — +${money((h-4)*SETTINGS.extraHourFee)}`:' — included'}</option>`).join('')}
           </select>
           <div class="hint">${money(SETTINGS.extraHourFee)} per additional hour beyond ${SETTINGS.chefServiceHours}.</div>
         </div>
         <div class="row">
-          <div class="field"><label>Name</label><input class="input" name="name" placeholder="Your name" value="${esc(state.booking.name)}"></div>
-          <div class="field"><label>WhatsApp</label><input class="input" name="phone" placeholder="+65 …" value="${esc(state.booking.phone)}"></div>
+          <div class="field"><label>Name</label><input class="input" name="name" placeholder="Your name" value="${esc(draft.name)}"></div>
+          <div class="field"><label>WhatsApp</label><input class="input" name="phone" placeholder="+65 …" value="${esc(draft.phone)}"></div>
         </div>
         <div class="field"><label>Where</label>
-          <input class="input" name="address" placeholder="Address or area" value="${esc(state.booking.address)}">
+          <input class="input" name="addr" placeholder="Address or area" value="${esc(draft.addr)}">
           <div class="hint">Singapore-wide, no travel charge.</div></div>
         <div class="field"><label>Anything else</label>
-          <textarea class="input" name="notes" placeholder="Allergies, occasion, special requests — Gino reads every one.">${esc(state.booking.notes)}</textarea></div>
+          <textarea class="input" name="notes" placeholder="Allergies, occasion, special requests — Gino reads every one.">${esc(draft.notes)}</textarea></div>
         <div id="resErr"></div>
         <button class="btn btn-primary btn-lg" style="width:100%;margin-top:8px" type="submit">Request this date</button>
         <p class="hint" style="text-align:center;margin-top:12px">No payment now. You'll hear back from Gino directly.</p>
@@ -329,18 +309,20 @@ function Reserve(){
 
 function calendar(){
   const unavail = unavailableDates();
-  const first = new Date(calMonth), today = new Date(); today.setHours(0,0,0,0);
+  const first = new Date(calMonth), today = addDays(0);
   const y = first.getFullYear(), mo = first.getMonth();
   const start = new Date(y, mo, 1).getDay(), days = new Date(y, mo+1, 0).getDate();
   const min = new Date(today.getFullYear(), today.getMonth(), 1);
   const cells = [];
   for (let i = 0; i < start; i++) cells.push('<div></div>');
   for (let d = 1; d <= days; d++){
-    const date = new Date(y, mo, d), s = iso(date);
+    const date = new Date(y, mo, d), key = iso(date);
     let cls = 'off';
-    if (date >= today && SETTINGS.serviceDays.includes(date.getDay())) cls = unavail.has(s) ? 'booked' : 'avail';
-    if (state.booking.date === s) cls = 'on';
-    cells.push(`<button type="button" class="cal-day ${cls}" data-d="${s}" ${cls==='off'||cls==='booked'?'disabled':''}>${d}</button>`);
+    if (date >= today && SETTINGS.serviceDays.includes(date.getDay()))
+      cls = unavail.has(key) ? 'booked' : 'avail';
+    if (draft.date === key) cls = 'on';
+    cells.push(`<button type="button" class="cal-day ${cls}" data-d="${key}"
+      ${cls==='off'||cls==='booked'?'disabled':''}>${d}</button>`);
   }
   return `<div class="cal">
     <div class="cal-head">
@@ -360,40 +342,102 @@ function calendar(){
   </div>`;
 }
 
+/* ══ THANKS ══════════════════════════════════════════ */
+function Thanks(id){
+  const b = bookingById(id);
+  if (!b) return NotFound('thanks/' + id);
+  return `${nav('#/reserve')}
+  <section class="sec"><div class="wrap narrow">
+    <div class="notice notice-ok" style="margin-bottom:26px"><span>✓</span><div>
+      <b>Request sent.</b> Gino has your details and will come back to you personally.</div></div>
+    <div class="rule"></div><div class="eyebrow">Reference ${b.id}</div>
+    <h1 class="display" style="font-size:clamp(1.9rem,4vw,2.7rem);margin:12px 0 14px">
+      ${esc(b.name.split(' ')[0])}, we’ve got you down for ${shortDate(b.date)}.</h1>
+    <p class="lede">${prettyDate(b.date)} at ${b.time} · ${b.pax} guests · ${esc(b.addr)}</p>
+
+    <div class="panel" style="margin-top:28px">
+      <div class="panel-t">What happens next</div>
+      <div class="line"><div><b>1 · Gino checks the date</b>
+        <div class="l-sub">Usually the same day. Nothing is charged yet.</div></div></div>
+      <div class="line"><div><b>2 · You get a private link</b>
+        <div class="l-sub">Where you choose your ${SETTINGS.includedChicken} chicken and ${SETTINGS.includedVeg} vegetable skewers, plus any add-ons.</div></div></div>
+      <div class="line"><div><b>3 · A 50% deposit holds the night</b>
+        <div class="l-sub">By PayNow. The balance is settled on the evening.</div></div></div>
+    </div>
+
+    <div class="notice notice-info" style="margin-top:22px"><span>◆</span><div>
+      <b>Testing the flow?</b> In real use you'd wait for Gino's message. To carry on now,
+      open <a href="#/chef" style="color:var(--ember)">Gino's side</a> and confirm
+      <b>${esc(b.name)}</b> — he'll get the link to send you.</div></div>
+  </div></section>${foot()}`;
+}
+
 /* ══ ORDER BUILDER ═══════════════════════════════════ */
-function Order(){
-  const o = state.order;
+
+/* Landing on the private-link screen without an id: explain, and (as a prototype
+   convenience) offer the confirmed bookings that a link would exist for. */
+function OrderIndex(){
+  const open = upcoming().filter(b => b.status === 'conf' || b.status === 'menu');
+  return `${nav('#/order')}
+  <section class="sec"><div class="wrap narrow">
+    <div class="rule"></div><div class="eyebrow">Private link</div>
+    <h1 class="display" style="font-size:clamp(1.9rem,4vw,2.7rem);margin:12px 0 14px">This screen opens from Gino’s message.</h1>
+    <p class="lede">Once he confirms your date he sends a link that opens your own menu.
+    There's nothing to see here without one.</p>
+    ${open.length ? `<div class="panel" style="margin-top:26px">
+      <div class="panel-t">Confirmed bookings you can open <span class="muted" style="font-size:.74rem;font-family:var(--sans)">prototype shortcut</span></div>
+      ${open.map(b => `<a class="line" style="text-decoration:none" href="${orderPath(b.id)}">
+        <div><b>${esc(b.name)}</b><div class="l-sub">${shortDate(b.date)} · ${b.pax} guests · ${b.id}</div></div>
+        <div class="l-amt" style="color:var(--ember)">Open →</div></a>`).join('')}
+    </div>` : `<div class="notice notice-info" style="margin-top:22px"><span>◆</span><div>
+      No confirmed bookings yet. <a href="#/reserve" style="color:var(--ember)">Request a date</a>,
+      then confirm it on <a href="#/chef" style="color:var(--ember)">Gino's side</a>.</div></div>`}
+  </div></section>${foot()}`;
+}
+
+function Order(id){
+  const b = bookingById(id);
+  if (!b) return NotFound('order/' + id);
+
+  if (b.status === 'req') return `${nav('#/order')}
+    <section class="sec"><div class="wrap narrow" style="text-align:center">
+      <div class="eyebrow">Reference ${b.id}</div>
+      <h1 class="display" style="margin:14px 0">Not confirmed yet.</h1>
+      <p class="lede" style="margin:0 auto 26px">Gino hasn’t confirmed ${shortDate(b.date)}. Your menu
+      opens as soon as he does.</p>
+      <a class="btn btn-ghost" href="#/chef">Open Gino’s side</a>
+    </div></section>${foot()}`;
+
+  const locked = b.status === 'paid' || b.status === 'done';
   const grid = (cat, limit, key) => {
-    const full = o[key].length >= limit;
+    const full = b[key].length >= limit;
     return `<div class="grid grid-6">${inCat(cat).map(m => {
-      const on = o[key].includes(m.id);
+      const on = b[key].includes(m.id);
       return itemCard(m, {
-        cls: `sel-able ${on?'on':''} ${!on && full ? 'dim':''}`,
-        attr: `data-pick="${key}" data-id="${m.id}" role="checkbox" tabindex="0" aria-checked="${on}"`,
+        cls: `sel-able ${on?'on':''} ${!on && full ? 'dim':''} ${locked?'dim':''}`,
+        attr: locked ? '' : `data-pick="${key}" data-id="${m.id}" role="checkbox" tabindex="0" aria-checked="${on}"`,
         pick: true, noPrice: m.price !== 'ask'
       });
     }).join('')}</div>`;
   };
-  const addonGrid = cat => `<div class="grid grid-4">${inCat(cat).map(qtyCard).join('')}</div>`;
+  const addonGrid = cat => `<div class="grid grid-4">${inCat(cat).map(m => qtyCard(m, b, locked)).join('')}</div>`;
 
   return `${nav('#/order')}
   <section style="padding:48px 0 10px"><div class="wrap">
-    <div class="rule"></div><div class="eyebrow">Step 2 of 2 · Your private menu</div>
+    <div class="rule"></div><div class="eyebrow">Step 2 of 2 · ${esc(b.name.split(' ')[0])}’s menu · ${b.id}</div>
     <h1 class="display" style="font-size:clamp(2.1rem,4.5vw,3.1rem);margin:12px 0 12px">Choose your nine.</h1>
     <p class="lede">${SETTINGS.includedChicken} chicken and ${SETTINGS.includedVeg} vegetable skewers are included in your set.
     Everything after that is an add-on — the total updates as you go.</p>
     <div class="rail" style="margin-top:28px">
-      <span class="rail-s ${o.chicken.length===7?'done':'on'}"><i>${o.chicken.length===7?'✓':'1'}</i>Chicken</span><span class="rail-line"></span>
-      <span class="rail-s ${o.veg.length===2?'done':''}"><i>${o.veg.length===2?'✓':'2'}</i>Vegetable</span><span class="rail-line"></span>
+      <span class="rail-s ${b.chicken.length===7?'done':'on'}"><i>${b.chicken.length===7?'✓':'1'}</i>Chicken</span><span class="rail-line"></span>
+      <span class="rail-s ${b.veg.length===2?'done':''}"><i>${b.veg.length===2?'✓':'2'}</i>Vegetable</span><span class="rail-line"></span>
       <span class="rail-s"><i>3</i>Add-ons</span><span class="rail-line"></span>
-      <span class="rail-s"><i>4</i>Confirm</span>
+      <span class="rail-s ${locked?'done':''}"><i>${locked?'✓':'4'}</i>Confirm</span>
     </div>
-    ${state.booking.date ? `<div class="notice notice-ok" style="margin-bottom:8px"><span>✓</span><div>
-      <b>${prettyDate(state.booking.date)}</b> at ${state.booking.time} · ${state.booking.pax} guests · confirmed by Gino.
-      You can change your menu until ${SETTINGS.cutoffHours} hours before.</div></div>`
-    : `<div class="notice notice-info"><span>◆</span><div>You haven't picked a date yet — in the real site you'd
-       arrive here from Gino's private link. <a href="#/reserve" style="color:var(--ember)">Request a date</a>,
-       or keep exploring the builder.</div></div>`}
+    <div class="notice notice-ok"><span>✓</span><div>
+      <b>${prettyDate(b.date)}</b> at ${b.time} · ${b.pax} guests · confirmed by Gino.
+      ${locked ? 'Your deposit is in and this menu is now locked.'
+               : `You can change your menu until ${SETTINGS.cutoffHours} hours before.`}</div></div>
   </div></section>
 
   <section class="sec" style="padding:34px 0"><div class="wrap">
@@ -410,86 +454,80 @@ function Order(){
     ${grid('vegetable', SETTINGS.includedVeg, 'veg')}
   </div></section>
 
+  ${['makimono','premium','sake'].map(cat => `
   <section class="sec" style="padding:34px 0;background:var(--ink)"><div class="wrap">
     <div class="sec-head" style="margin-bottom:20px"><div class="rule"></div>
-      <h2 class="display" style="margin-bottom:4px">Makimono <span class="jp" style="color:var(--text-3);font-size:.55em">巻き物</span></h2>
-      <p class="muted" style="font-size:.9rem">${CATS.makimono.blurb}</p></div>
-    ${addonGrid('makimono')}
-  </div></section>
+      <h2 class="display" style="margin-bottom:4px">${CATS[cat].label}
+        <span class="jp" style="color:var(--text-3);font-size:.55em">${CATS[cat].cn}</span></h2>
+      <p class="muted" style="font-size:.9rem">${CATS[cat].blurb}</p></div>
+    ${addonGrid(cat)}
+  </div></section>`).join('')}
 
-  <section class="sec" style="padding:34px 0;background:var(--ink)"><div class="wrap">
-    <div class="sec-head" style="margin-bottom:20px"><div class="rule"></div>
-      <h2 class="display" style="margin-bottom:4px">Premium <span class="jp" style="color:var(--text-3);font-size:.55em">特選</span></h2>
-      <p class="muted" style="font-size:.9rem">${CATS.premium.blurb}</p></div>
-    ${addonGrid('premium')}
-  </div></section>
-
-  <section class="sec" style="padding:34px 0 60px;background:var(--ink)"><div class="wrap">
-    <div class="sec-head" style="margin-bottom:20px"><div class="rule"></div>
-      <h2 class="display" style="margin-bottom:4px">Saké <span class="jp" style="color:var(--text-3);font-size:.55em">日本酒</span></h2>
-      <p class="muted" style="font-size:.9rem">${CATS.sake.blurb}</p></div>
-    ${addonGrid('sake')}
-  </div></section>
-
-  <div class="bar"><div class="wrap bar-in" id="orderBar"></div></div>
+  <div class="bar"><div class="wrap bar-in" id="orderBar" data-id="${b.id}"></div></div>
   ${foot()}`;
 }
 
-function qtyCard(m){
-  const q = state.order.addons[m.id] || 0;
+function qtyCard(m, b, locked){
+  const q = b.addons[m.id] || 0;
   const ask = m.price === 'ask';
-  return `<article class="card qcard ${q?'on':''}" data-q="${m.id}">
+  return `<article class="card qcard ${q?'on':''} ${locked?'dim':''}" data-q="${m.id}">
     <div class="card-img"><img src="${imgOf(m)}" alt="${esc(m.en)}" loading="lazy"></div>
     <div class="qcard-body">
       <div class="card-en" style="font-size:.83rem">${m.flag||''} ${esc(m.en)}</div>
       <div class="card-cn" style="font-size:.72rem">${esc(m.cn)}</div>
       <div class="card-price" style="margin-top:5px">
         ${ask ? '<span style="color:var(--text-3)">Ask the chef</span>'
-              : `${money(m.price)} <span class="per">/ ${m.unit}</span>${m.min>1?` <span class="card-min" style="display:inline">· min ${m.min}</span>`:''}`}
+              : `${money(m.price)} <span class="per">/ ${m.unit}</span>${
+                  m.min>1?` <span class="card-min" style="display:inline">· min ${m.min}</span>`:''}`}
       </div>
     </div>
-    ${ask ? `<button class="btn btn-ghost" style="padding:8px 15px;font-size:.75rem" data-ask="${m.id}">${q?'Requested ✓':'Request'}</button>`
+    ${ask ? `<button class="btn btn-ghost" style="padding:8px 15px;font-size:.75rem" data-ask="${m.id}" ${locked?'disabled':''}>${q?'Requested ✓':'Request'}</button>`
           : `<div class="qty">
-              <button data-step="-1" ${q?'':'disabled'}>−</button>
-              <input type="number" value="${q}" min="0" data-qin="${m.id}">
-              <button data-step="1">+</button>
+              <button data-step="-1" ${q && !locked?'':'disabled'}>−</button>
+              <input type="number" value="${q}" min="0" data-qin="${m.id}" ${locked?'disabled':''}>
+              <button data-step="1" ${locked?'disabled':''}>+</button>
             </div>`}
   </article>`;
 }
 
 function renderBar(){
   const bar = $('#orderBar'); if (!bar) return;
-  const o = state.order;
-  const q = quote({ hours: state.booking.hours, addons: o.addons });
-  const v = validate({ ...o, pax: state.booking.pax });
+  const b = bookingById(bar.dataset.id); if (!b) return;
+  const q = quote({ hours: b.hours, addons: b.addons });
+  const v = validate({ chicken:b.chicken, veg:b.veg, addons:b.addons, pax:b.pax });
   const cls = (n, need) => n === need ? 'done' : n > need ? 'over' : '';
+  const shortChicken = SETTINGS.includedChicken - b.chicken.length;
+  const shortVeg     = SETTINGS.includedVeg - b.veg.length;
+  const label = v.ok ? 'Review &amp; confirm →'
+    : [shortChicken > 0 ? `${shortChicken} chicken` : '', shortVeg > 0 ? `${shortVeg} vegetable` : '']
+        .filter(Boolean).join(', ') + ' to go';
   bar.innerHTML = `
     <div class="bar-counts">
-      <span class="bar-c ${cls(o.chicken.length,7)}"><b>${o.chicken.length}/${SETTINGS.includedChicken}</b> chicken</span>
-      <span class="bar-c ${cls(o.veg.length,2)}"><b>${o.veg.length}/${SETTINGS.includedVeg}</b> vegetable</span>
-      <span class="bar-c"><b>${Object.values(o.addons).filter(Boolean).length}</b> add-ons</span>
+      <span class="bar-c ${cls(b.chicken.length,7)}"><b>${b.chicken.length}/${SETTINGS.includedChicken}</b> chicken</span>
+      <span class="bar-c ${cls(b.veg.length,2)}"><b>${b.veg.length}/${SETTINGS.includedVeg}</b> vegetable</span>
+      <span class="bar-c"><b>${Object.values(b.addons).filter(Boolean).length}</b> add-ons</span>
     </div>
     <div class="bar-total"><small>Total · deposit ${money(q.deposit)}</small><b>${money(q.subtotal)}</b></div>
-    <button class="btn btn-primary" id="toSummary" ${v.ok?'':'disabled'}>
-      ${v.ok ? 'Review & confirm →' : `${7-o.chicken.length>0?`${7-o.chicken.length} chicken`:''}${(7-o.chicken.length>0&&2-o.veg.length>0)?', ':''}${2-o.veg.length>0?`${2-o.veg.length} vegetable`:''} to go`}
-    </button>`;
-  $('#toSummary')?.addEventListener('click', () => go('#/summary'));
+    <button class="btn btn-primary" id="toSummary" ${v.ok?'':'disabled'}>${label}</button>`;
+  $('#toSummary')?.addEventListener('click', () => { submitMenu(b.id); go(`#/order/${b.id}/summary`); });
 }
 
 /* ══ SUMMARY ═════════════════════════════════════════ */
-function Summary(){
-  const o = state.order, b = state.booking;
-  const q = quote({ hours: b.hours, addons: o.addons });
-  const chips = ids => ids.map(id => { const m = byId(id); return `
+function Summary(id){
+  const b = bookingById(id);
+  if (!b) return NotFound(`order/${id}/summary`);
+  const q = quote({ hours: b.hours, addons: b.addons });
+  const settled = b.status === 'paid' || b.status === 'done';
+  const chips = ids => ids.map(x => { const m = byId(x); return `
     <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;background:var(--raise);border-radius:999px">
       <img src="${imgOf(m)}" alt="" style="width:26px;height:26px;object-fit:contain">
       <span style="font-size:.8rem">${esc(m.en)}</span></div>`; }).join('');
 
   return `${nav('#/order')}
   <section style="padding:48px 0 10px"><div class="wrap narrow">
-    <div class="rule"></div><div class="eyebrow">Almost there</div>
+    <div class="rule"></div><div class="eyebrow">${b.id} · ${esc(b.name)}</div>
     <h1 class="display" style="font-size:clamp(2rem,4vw,2.8rem);margin:12px 0 10px">Your night, in full.</h1>
-    <p class="lede">Check it over, then secure the date with a 50% deposit.</p>
+    <p class="lede">${settled ? 'Deposit received — you’re all set.' : 'Check it over, then secure the date with a 50% deposit.'}</p>
   </div></section>
   <section style="padding-bottom:80px"><div class="wrap narrow">
     <div class="panel" style="margin-bottom:20px">
@@ -497,17 +535,17 @@ function Summary(){
       <div class="kv"><span>Date</span><b>${prettyDate(b.date)}</b></div>
       <div class="kv"><span>Time</span><b>${esc(b.time)} · ${b.hours} hours</b></div>
       <div class="kv"><span>Guests</span><b>${b.pax}</b></div>
-      <div class="kv"><span>Where</span><b>${esc(b.address) || '<span class="muted">Not set</span>'}</b></div>
+      <div class="kv"><span>Where</span><b>${esc(b.addr) || '<span class="muted">Not set</span>'}</b></div>
       ${b.notes ? `<div class="kv"><span>Notes</span><b>${esc(b.notes)}</b></div>` : ''}
     </div>
 
     <div class="panel" style="margin-bottom:20px">
       <div class="panel-t">Your ${SETTINGS.includedChicken + SETTINGS.includedVeg} set skewers
-        <a href="#/order" style="font-size:.78rem;color:var(--ember);font-family:var(--sans)">Change</a></div>
+        ${settled ? '' : `<a href="${orderPath(b.id)}" style="font-size:.78rem;color:var(--ember);font-family:var(--sans)">Change</a>`}</div>
       <div style="font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);margin-bottom:9px">Chicken</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">${chips(o.chicken)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">${chips(b.chicken)}</div>
       <div style="font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);margin-bottom:9px">Vegetable</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">${chips(o.veg)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${chips(b.veg)}</div>
     </div>
 
     <div class="panel" style="margin-bottom:20px">
@@ -520,16 +558,22 @@ function Summary(){
         and it isn't in the total above.</div></div>` : ''}
       <div class="deposit-box">
         <div style="display:flex;justify-content:space-between;align-items:baseline">
-          <div><b style="font-size:.9rem">Deposit due now</b><div class="hint" style="margin:2px 0 0">50% · balance ${money(q.balance)} on the night</div></div>
-          <div class="d-amt">${money(q.deposit)}</div>
+          <div><b style="font-size:.9rem">Deposit ${settled ? 'received' : 'due now'}</b>
+            <div class="hint" style="margin:2px 0 0">50% · balance ${money(q.balance)} on the night</div></div>
+          <div class="d-amt" ${settled?'style="color:var(--green)"':''}>${money(q.deposit)}</div>
         </div>
       </div>
     </div>
 
-    ${state.paid ? `<div class="notice notice-ok"><span>✓</span><div><b>Deposit screenshot received.</b>
-      Gino will confirm within a few hours and your date is locked in. See you on ${prettyDate(b.date)}.</div></div>
-      <p style="margin-top:22px;text-align:center"><button class="btn btn-ghost" id="resetAll">Start a new booking</button></p>`
-    : `<div class="panel">
+    ${settled
+      ? `<div class="notice notice-ok"><span>✓</span><div><b>Confirmed.</b> Gino has your deposit and your
+          menu is locked in. See you on ${prettyDate(b.date)}.</div></div>`
+      : b.depositClaimed
+        ? `<div class="notice notice-info"><span>◆</span><div><b>Thanks — Gino is checking for your transfer.</b>
+            He'll confirm shortly. Reference <b>${b.id}</b>.</div></div>
+           <div class="notice notice-info" style="margin-top:14px"><span>◆</span><div><b>Testing the flow?</b>
+            Open <a href="#/chef" style="color:var(--ember)">Gino's side</a> and mark the deposit received.</div></div>`
+        : `<div class="panel">
       <div class="panel-t">Pay the deposit · PayNow</div>
       <div class="pay-grid">
         ${fakeQR()}
@@ -537,7 +581,7 @@ function Summary(){
           <div class="kv"><span>UEN</span><b><span class="ph" title="Placeholder">${SETTINGS.paynow.uen}</span></b></div>
           <div class="kv"><span>Account</span><b><span class="ph" title="Placeholder">${SETTINGS.paynow.name}</span></b></div>
           <div class="kv"><span>Amount</span><b style="color:var(--ember)">${money(q.deposit)}</b></div>
-          <div class="kv"><span>Reference</span><b>BY-${(b.date||'').replace(/-/g,'').slice(2)||'XXXXXX'}</b></div>
+          <div class="kv"><span>Reference</span><b>${b.id}</b></div>
         </div>
       </div>
       <div class="drop" id="drop" style="margin-top:20px">
@@ -545,8 +589,8 @@ function Summary(){
         <p style="font-size:.88rem;margin-top:8px"><b>Upload your payment screenshot</b></p>
         <p class="hint">Gino checks it against the reference and confirms.</p>
       </div>
-      <button class="btn btn-primary btn-lg" style="width:100%;margin-top:18px" id="markPaid">I've paid the deposit</button>
-      <p class="hint" style="text-align:center;margin-top:10px">Prototype — this just marks the booking as paid locally.</p>
+      <button class="btn btn-primary btn-lg" style="width:100%;margin-top:18px" id="markPaid" data-id="${b.id}">I've paid the deposit</button>
+      <p class="hint" style="text-align:center;margin-top:10px">Prototype — no money moves. This tells Gino to look for it.</p>
     </div>`}
   </div></section>${foot()}`;
 }
@@ -569,100 +613,159 @@ function fakeQR(){
   </svg></div>`;
 }
 
-/* ── router ──────────────────────────────────────────── */
-const ROUTES = {
-  '#/':Home, '#/menu':Menu, '#/reserve':Reserve, '#/order':Order, '#/summary':Summary,
-  '#/chef':ChefBookings, '#/chef/calendar':ChefCalendar, '#/chef/menu':ChefMenu, '#/chef/settings':ChefSettings
-};
-const isChef = h => h.startsWith('#/chef');
+/* ── router ─────────────────────────────────────────── */
+const ROUTES = [
+  [/^$/,                        () => Home()],
+  [/^menu$/,                    () => Menu()],
+  [/^reserve$/,                 () => Reserve()],
+  [/^thanks\/([\w-]+)$/,         id => Thanks(id)],
+  [/^order$/,                   () => OrderIndex()],
+  [/^order\/([\w-]+)$/,         id => Order(id)],
+  [/^order\/([\w-]+)\/summary$/, id => Summary(id)],
+  [/^chef$/,                    () => ChefBookings()],
+  [/^chef\/calendar$/,          () => ChefCalendar()],
+  [/^chef\/menu$/,              () => ChefMenu()],
+  [/^chef\/settings$/,          () => ChefSettings()]
+];
+const isChef = path => path.startsWith('chef');
 function go(h){ if (location.hash === h) render(); else location.hash = h; }
 
+function pathOf(){ return (location.hash || '#/').replace(/^#\/?/, '').split('?')[0]; }
+
 function render(){
-  let h = location.hash || '#/';
-  if (h === '#/demo'){ seedDemo(); location.replace('#/summary'); h = '#/summary'; }
-  if (h.startsWith('#cat-')){ document.getElementById(h.slice(1))?.scrollIntoView({behavior:'smooth'}); return; }
-  const view = ROUTES[h] || Home;
-  $('#app').innerHTML = view();
+  let path = pathOf();
+
+  if (path === 'reset'){ resetStore(); draft = { date:null, time:'19:00', pax:SETTINGS.minPax,
+    hours:SETTINGS.chefServiceHours, name:'', phone:'', addr:'', notes:'' };
+    location.replace('#/'); path = ''; }
+
+  if (path.startsWith('cat-')){ document.getElementById(path)?.scrollIntoView({behavior:'smooth'}); return; }
+
+  let html = null;
+  for (const [re, view] of ROUTES){
+    const m = path.match(re);
+    if (m){ html = view(m[1]); break; }
+  }
+  if (html === null) html = NotFound(path);
+
+  $('#app').innerHTML = demoBar(path) + html;
   window.scrollTo(0,0);
-  wire(h);
+  wire(path);
   observe();
 }
 
-function wire(h){
-  $('#navToggle')?.addEventListener('click', () => $('#navLinks').classList.toggle('open'));
+function NotFound(path){
+  return `${nav('')}<section class="sec"><div class="wrap narrow" style="text-align:center">
+    <div class="eyebrow">Not found</div>
+    <h1 class="display" style="margin:14px 0">That link doesn’t lead anywhere.</h1>
+    <p class="lede" style="margin:0 auto 26px">No page at <code>#/${esc(path)}</code>.</p>
+    <a class="btn btn-primary" href="#/">Back to the start</a>
+  </div></section>${foot()}`;
+}
 
-  if (h === '#/reserve'){
+/* A prototype convenience: hop between the two points of view without hunting
+   for URLs, and wipe the sample data to run the whole flow again. */
+function demoBar(path){
+  const chef = isChef(path);
+  return `<div class="demobar">
+    <span class="demobar-t">Prototype</span>
+    <a class="${chef?'':'on'}" href="#/">Customer</a>
+    <a class="${chef?'on':''}" href="#/chef">Gino</a>
+    <button id="demoReset" title="Wipe every booking and start the flow again">Reset data</button>
+    <span class="demobar-note">${chef
+      ? 'Sample bookings — nothing here sends a real message.'
+      : 'Bookings are saved in this browser only.'}</span>
+  </div>`;
+}
+
+function wire(path){
+  $('#navToggle')?.addEventListener('click', () => $('#navLinks').classList.toggle('open'));
+  $('#demoReset')?.addEventListener('click', () => {
+    if (confirm('Wipe every booking and start the flow again from scratch?')) go('#/reset');
+  });
+
+  if (path === 'reserve'){
     const mount = () => { $('#calMount').innerHTML = calendar(); bindCal(); };
     const bindCal = () => {
       $('#calPrev')?.addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth()-1); mount(); });
       $('#calNext')?.addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth()+1); mount(); });
       $$('.cal-day.avail, .cal-day.on').forEach(el => el.addEventListener('click', () => {
-        state.booking.date = el.dataset.d; save(); mount();
+        draft.date = el.dataset.d; mount();
       }));
     };
     mount();
+
     $('#resForm').addEventListener('submit', e => {
       e.preventDefault();
       const f = Object.fromEntries(new FormData(e.target));
-      Object.assign(state.booking, { ...f, pax:+f.pax, hours:+f.hours });
+      Object.assign(draft, f, { pax:+f.pax, hours:+f.hours });
+
       const errs = [];
-      if (!state.booking.date) errs.push('Pick a date from the calendar.');
-      if (state.booking.pax < SETTINGS.minPax) errs.push(`Minimum ${SETTINGS.minPax} guests.`);
-      if (!state.booking.name?.trim()) errs.push('We need a name.');
-      if (!state.booking.phone?.trim()) errs.push('We need a WhatsApp number to reach you.');
+      if (!draft.date) errs.push('Pick a date from the calendar.');
+      else if (unavailableDates().has(draft.date)) errs.push('That evening was just taken — please pick another.');
+      if (draft.pax < SETTINGS.minPax) errs.push(`Minimum ${SETTINGS.minPax} guests.`);
+      if (!draft.name.trim())  errs.push('We need a name.');
+      if (!draft.phone.trim()) errs.push('We need a WhatsApp number to reach you.');
+      if (!draft.addr.trim())  errs.push('We need to know where you are.');
       if (errs.length){
         $('#resErr').innerHTML = `<div class="notice notice-warn" style="margin-bottom:14px"><span>!</span>
           <div><b>Almost —</b><ul>${errs.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div></div>`;
         return;
       }
-      save();
-      $('#resErr').innerHTML = `<div class="notice notice-ok" style="margin-bottom:14px"><span>✓</span><div>
-        <b>Request sent.</b> Gino has your details for ${prettyDate(state.booking.date)} and will confirm shortly.
-        <br><span class="muted">Prototype: jumping you straight to the private menu link he'd send.</span></div></div>`;
-      setTimeout(() => go('#/order'), 1500);
+      const b = createBooking({ ...draft });
+      draft = { date:null, time:'19:00', pax:SETTINGS.minPax, hours:SETTINGS.chefServiceHours,
+                name:'', phone:'', addr:'', notes:'' };
+      go(`#/thanks/${b.id}`);
     });
   }
 
-  if (h === '#/order'){
+  if (/^order\/[\w-]+$/.test(path)){
+    const id = path.split('/')[1];
+
     $$('[data-pick]').forEach(el => {
+      const act = () => {
+        const b = bookingById(id); if (!b) return;
+        const { pick, id: itemId } = el.dataset;
+        const limit = pick === 'chicken' ? SETTINGS.includedChicken : SETTINGS.includedVeg;
+        const arr = b[pick].slice(), i = arr.indexOf(itemId);
+        if (i > -1) arr.splice(i, 1);
+        else if (arr.length < limit) arr.push(itemId);
+        else return;
+        saveMenu(id, { [pick]: arr });
+        render();
+      };
+      el.addEventListener('click', act);
       el.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); }
-      });
-      el.addEventListener('click', () => {
-      const { pick, id } = el.dataset;
-      const limit = pick === 'chicken' ? SETTINGS.includedChicken : SETTINGS.includedVeg;
-      const arr = state.order[pick], i = arr.indexOf(id);
-      if (i > -1) arr.splice(i,1);
-      else if (arr.length < limit) arr.push(id);
-      else return;
-      save(); render();
+        if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); act(); }
       });
     });
 
     $$('[data-q]').forEach(card => {
-      const id = card.dataset.q, m = byId(id);
+      const itemId = card.dataset.q, m = byId(itemId);
       const set = n => {
+        const b = bookingById(id); if (!b) return;
         n = Math.max(0, n);
         if (n > 0 && m.min && n < m.min) n = m.min;   // first tap jumps to the minimum
-        if (n) state.order.addons[id] = n; else delete state.order.addons[id];
-        save();
+        const addons = { ...b.addons };
+        if (n) addons[itemId] = n; else delete addons[itemId];
+        saveMenu(id, { addons });
         const inp = $('[data-qin]', card); if (inp) inp.value = n;
         card.classList.toggle('on', !!n);
         $('[data-step="-1"]', card)?.toggleAttribute('disabled', !n);
         renderBar();
       };
-      $('[data-step="1"]', card)?.addEventListener('click', () => set((state.order.addons[id]||0) + (state.order.addons[id] ? 1 : (m.min||1))));
+      const cur = () => bookingById(id)?.addons[itemId] || 0;
+      $('[data-step="1"]', card)?.addEventListener('click', () => set(cur() ? cur() + 1 : (m.min || 1)));
       $('[data-step="-1"]', card)?.addEventListener('click', () => {
-        const cur = state.order.addons[id] || 0;
-        set(cur <= (m.min||1) ? 0 : cur - 1);
+        const c = cur(); set(c <= (m.min || 1) ? 0 : c - 1);
       });
       $('[data-qin]', card)?.addEventListener('change', e => set(+e.target.value || 0));
-      $('[data-ask]', card)?.addEventListener('click', () => { set(state.order.addons[id] ? 0 : 1); render(); });
+      $('[data-ask]', card)?.addEventListener('click', () => { set(cur() ? 0 : 1); render(); });
     });
     renderBar();
   }
 
-  if (h === '#/summary'){
+  if (/^order\/[\w-]+\/summary$/.test(path)){
     $('#drop')?.addEventListener('click', () => {
       const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
       i.onchange = () => { if (i.files[0]) $('#drop').innerHTML =
@@ -670,11 +773,10 @@ function wire(h){
          <b>${esc(i.files[0].name)}</b></p><p class="hint">Ready to send with your booking.</p>`; };
       i.click();
     });
-    $('#markPaid')?.addEventListener('click', () => { state.paid = true; save(); render(); });
-    $('#resetAll')?.addEventListener('click', reset);
+    $('#markPaid')?.addEventListener('click', e => { claimDeposit(e.target.dataset.id); render(); });
   }
 
-  if (isChef(h)) wireChef(h);
+  if (isChef(path)) wireChef(path);
 }
 
 /* reveal-on-scroll */

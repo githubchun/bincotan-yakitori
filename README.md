@@ -28,20 +28,37 @@ Routes are hash-based:
 | `#/` | Home |
 | `#/menu` | Full digital menu (replaces the PDF) |
 | `#/reserve` | Step 1 — request a date |
-| `#/order` | Step 2 — build the 7 + 2 and add-ons |
-| `#/summary` | Review, bill, PayNow deposit |
-| `#/demo` | Seeds a filled example booking, then jumps to `#/summary` |
+| `#/order` | Explains the private link (and lists confirmed bookings, as a shortcut) |
+| `#/thanks/:id` | Confirmation after a request is sent |
+| `#/order/:id` | The private menu link Gino sends |
+| `#/order/:id/summary` | Review, bill, PayNow deposit |
+| `#/reset` | Wipes everything back to the sample data |
 | `#/chef` | Gino's bookings inbox |
 | `#/chef/calendar` | Month view; tap an open evening to block it |
 | `#/chef/menu` | Price and availability per item |
 | `#/chef/settings` | Pricing, PayNow, contact |
 
-## How the flow works
+## Walking the whole flow
 
-The customer requests a date. Gino confirms it, then sends a private link where
-the customer picks their menu — the same order he already works in, just without
-the group chat. The menu stays editable until 72 hours before the event, matching
-the cancellation policy. Deposit is 50% by PayNow, which Gino marks received by hand.
+Both sides are wired to one store, so you can run a booking end to end. Use the
+**Customer / Gino** switch in the prototype strip at the top of every page.
+
+1. **Customer** → *Reserve* → pick an evening, fill in the form, send the request.
+2. **Gino** → the request is in his inbox → **Confirm the date**. He now has the
+   private link, with a copy button and a pre-written WhatsApp message.
+3. **Customer** → open that link → choose 7 chicken + 2 vegetable, add extras,
+   watch the total move → **Review & confirm**.
+4. **Customer** → PayNow screen → **I've paid the deposit**.
+5. **Gino** → the booking now says *"says the deposit is sent"* → **Confirm it landed**.
+6. **Customer** → the summary reads *Deposit received*, and the menu locks.
+
+Along the way: that evening disappears from the public calendar the moment the
+request is made, and the menu stays editable until 72 hours before the event.
+
+**Reset data** in the top strip puts everything back to the sample bookings.
+
+Everything is stored in `localStorage`, so both sides must be the same browser —
+two phones won't see each other's changes until there's a real backend.
 
 ## Layout
 
@@ -56,6 +73,7 @@ assets/js/app.js        customer screens, routing, selection logic
 probe-widths.html       layout probe: every route × 360/390/768, flags overflow
 assets/img/*.webp       58 cutouts extracted from the chef's PDF
 test.js                 26 assertions over pricing + validation
+test-flow.js            29 assertions over the booking lifecycle
 build-artifact.py       inlines everything into one shareable HTML file
 ```
 
@@ -79,14 +97,11 @@ priced "ask" — they're flagged for Gino to quote and stay out of the total.
 ## Tests
 
 ```sh
-node -e "
-const fs=require('fs'),vm=require('vm');
-const ctx={console,__exists:p=>fs.existsSync(p),__done:f=>process.exit(f?1:0)};
-vm.createContext(ctx);
-vm.runInContext(['assets/js/menu-data.js','assets/js/pricing.js','test.js']
-  .map(f=>fs.readFileSync(f,'utf8')).join('\n;\n'),ctx);
-"
+./run-tests.sh
 ```
+
+`probe-widths.html`, served over http, loads every route in an iframe at 360 /
+390 / 768 px and flags anything that pushes the page sideways.
 
 ## Build the shareable file
 
