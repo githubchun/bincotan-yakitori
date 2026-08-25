@@ -37,7 +37,7 @@ function foot(){
       <div class="foot-brand" style="max-width:300px">
         <img src="${asset('cal-bincotan-light')}" alt="備長炭">
         <p class="muted" style="font-size:.85rem;line-height:1.7">Charcoal-grilled yakitori, cooked at your table.
-        Private events across Singapore, Tuesday to Saturday.</p>
+        Private events across Singapore.</p>
       </div>
       <div><h4>Explore</h4>
         ${NAVLINKS.map(([h,l]) => `<a href="${h}">${l}</a>`).join('')}
@@ -49,7 +49,7 @@ function foot(){
       </div>
       <div><h4>Good to know</h4>
         <a href="#/menu">Minimum 10 guests</a>
-        <a href="#/menu">Tuesday to Saturday</a>
+        <a href="#/reserve">Evenings Gino has opened</a>
         <a href="#/reserve">50% deposit on confirmation</a>
       </div>
     </div>
@@ -127,7 +127,7 @@ function Home(){
       <div class="hero-facts">
         <div class="fact"><strong>${money(SETTINGS.sessionFee + SETTINGS.chefServiceFee)}</strong><span>From, serves ${SETTINGS.minPax}</span></div>
         <div class="fact"><strong>7 + 2</strong><span>Skewers you choose</span></div>
-        <div class="fact"><strong>Tue–Sat</strong><span>Available evenings</span></div>
+        <div class="fact"><strong>10%</strong><span>Holds your date</span></div>
       </div>
     </div>
     <div class="collage">
@@ -151,14 +151,16 @@ function Home(){
     <div class="sec-head rv"><div class="rule"></div><div class="eyebrow">How it works</div>
       <h2 class="display">Four steps, no group chat.</h2></div>
     <div class="steps rv">
-      <div class="step"><div class="step-n">01</div><h3>Request your date</h3>
-        <p>Pick an evening, tell us how many are coming and where. Tuesday to Saturday, minimum ${SETTINGS.minPax} guests.</p></div>
-      <div class="step"><div class="step-n">02</div><h3>Gino confirms</h3>
-        <p>He checks the date and comes back to you personally — usually the same day — with a private link to your menu.</p></div>
-      <div class="step"><div class="step-n">03</div><h3>Build your menu</h3>
-        <p>Choose your 7 chicken and 2 vegetable skewers, add wagyu, prawns or saké. The price updates as you go.</p></div>
-      <div class="step"><div class="step-n">04</div><h3>Pay 50%, and eat</h3>
-        <p>A 50% deposit by PayNow holds the night. Gino arrives with the grill; you handle the drinks.</p></div>
+      <div class="step"><div class="step-n">01</div><h3>Take your date</h3>
+        <p>Pick an open evening and hold it with ${money(round2(SETTINGS.holdPct * minimumSpend()))} —
+        ${SETTINGS.holdPct * 100}% of the minimum. It's yours immediately; nobody has to approve it.</p></div>
+      <div class="step"><div class="step-n">02</div><h3>Build your menu</h3>
+        <p>Straight away — no waiting. Seven chicken and two vegetable skewers are included; take more types
+        at ${money(SETTINGS.extraSkewerPrice)} a skewer. The price moves as you go.</p></div>
+      <div class="step"><div class="step-n">03</div><h3>Settle to half</h3>
+        <p>Submitting your menu locks it in and brings you to 50% of the bill. Changed your mind? Gino reopens it.</p></div>
+      <div class="step"><div class="step-n">04</div><h3>He arrives and grills</h3>
+        <p>The last 50% is settled with Gino on the night. You handle the drinks.</p></div>
     </div>
   </div></section>
 
@@ -202,7 +204,7 @@ function Home(){
     <div class="wrap narrow rv">
       <img src="${asset('mark-rooster')}" alt="" style="height:88px;width:auto;margin:0 auto 24px">
       <h2 class="display">Book the grill.</h2>
-      <p class="lede" style="margin:14px auto 30px">Tuesday to Saturday, across Singapore. Minimum ${SETTINGS.minPax} guests.</p>
+      <p class="lede" style="margin:14px auto 30px">Across Singapore. Minimum ${SETTINGS.minPax} guests, from ${money(minimumSpend())}.</p>
       <a class="btn btn-primary btn-lg" href="#/reserve">Reserve a night</a>
     </div>
   </section>
