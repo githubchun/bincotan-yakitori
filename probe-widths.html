@@ -1,0 +1,58 @@
+<!doctype html><meta charset="utf-8"><title>width probe</title>
+<style>
+body{margin:0;background:#111;color:#fff;font:13px monospace}
+.row{display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid #333}
+.tag{width:150px} .v{width:150px} .ok{color:#6ee787} .bad{color:#ff7b72;font-weight:700}
+iframe{border:0;width:0;height:0;position:absolute;visibility:hidden}
+</style>
+<div id="out"></div>
+<script>
+const ROUTES = ['#/', '#/menu', '#/reserve', '#/order', '#/demo', '#/chef',
+                '#/chef/calendar', '#/chef/menu', '#/chef/settings'];
+const WIDTHS = [360, 390, 768];
+const out = document.getElementById('out');
+
+async function measure(route, w){
+  return new Promise(res => {
+    const f = document.createElement('iframe');
+    f.style.cssText = `width:${w}px;height:900px;position:absolute;left:-9999px;visibility:visible`;
+    f.src = 'index.html' + route;
+    f.onload = () => setTimeout(() => {
+      const d = f.contentDocument, de = d.documentElement;
+      // Unmask: body's overflow-x:hidden would hide a genuine sideways scroll.
+      d.body.style.setProperty('overflow-x','visible');
+      // documentElement.scrollWidth is the real test — it ignores content that
+      // lives inside a legitimate nested scroll container (the tab bar, tables).
+      const widest = de.scrollWidth;
+      // Name the worst offender so a failure is actionable.
+      let worst = null, worstR = 0;
+      d.querySelectorAll('body *').forEach(el => {
+        if (el.closest('.ctabs, .tbl-scroll, .cat-nav')) return;   // legitimate scroll containers
+        if (el === d.body) return;
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.right > worstR){ worstR = r.right; worst = el.className || el.tagName; }
+      });
+      res({ scroll: de.scrollWidth, client: de.clientWidth, widest, worst, worstR: Math.ceil(worstR) });
+      f.remove();
+    }, 700);
+    document.body.appendChild(f);
+  });
+}
+
+(async () => {
+  for (const r of ROUTES){
+    for (const w of WIDTHS){
+      const m = await measure(r, w);
+      const over = m.widest - w;
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.innerHTML = `<span class="tag">${r || '#/ (home)'}</span>`
+        + `<span class="v">${w}px viewport</span>`
+        + `<span class="${over > 1 ? 'bad' : 'ok'}">${over > 1 ? 'OVERFLOW +' + over + 'px' : 'fits'}</span>`
+        + `<span style="color:#888">sw ${m.widest} · worst ${m.worstR} ${String(m.worst||'').slice(0,34)}</span>`;
+      out.appendChild(div);
+    }
+  }
+  document.title = 'DONE ' + document.querySelectorAll('.bad').length + ' overflow';
+})();
+</script>
